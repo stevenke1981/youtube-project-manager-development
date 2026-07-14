@@ -35,8 +35,9 @@
 - [x] Create project dialog。
 - [x] Project workspace shell。
 - [x] 實際 folder picker。
+- [x] 編號化 StepGuide、`Next step:` 提示與工作區狀態更新操作。
 - [-] toast／persistent error center（目前先有 global error banner）。
-- [ ] table view、filter、sort。
+- [-] table view、filter、sort（目前已完成搜尋、狀態篩選與排序；table view 尚未加入）。
 - [ ] light mode 與 system mode。
 - [ ] keyboard shortcuts／command palette。
 
@@ -52,6 +53,7 @@
 
 ## M4 — Workflow
 
+- [x] Project status transition command/UI（status 更新以 project.json 為真實來源）。
 - [ ] Task CRUD。
 - [ ] Kanban transitions。
 - [ ] progress calculation rules。

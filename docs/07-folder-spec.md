@@ -50,7 +50,7 @@ YYYY-MM-DD_影片標題/
 
 ## Required vs Optional
 
-MVP 所有編號資料夾建立。內部子資料夾可由 template 控制，但 validator 要區分 error 與 warning。
+MVP 所有編號資料夾建立。缺少必要編號資料夾或發現 symlink/junction 時，validator 回傳 `Error`；可選的內部子資料夾或非阻斷提示才使用 `Warning`。
 
 ## Hidden App Files
 

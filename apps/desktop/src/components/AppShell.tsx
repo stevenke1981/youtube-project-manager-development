@@ -13,6 +13,8 @@ type Props = {
   children: ReactNode;
   onNewProject: () => void;
   onChooseLibraryRoot: () => void;
+  searchQuery: string;
+  onSearchChange: (value: string) => void;
 };
 
 const nav = [
@@ -23,7 +25,7 @@ const nav = [
   [Workflow, "自動化", false]
 ] as const;
 
-export function AppShell({ children, onNewProject, onChooseLibraryRoot }: Props) {
+export function AppShell({ children, onNewProject, onChooseLibraryRoot, searchQuery, onSearchChange }: Props) {
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -33,13 +35,13 @@ export function AppShell({ children, onNewProject, onChooseLibraryRoot }: Props)
         </div>
         <nav aria-label="主要導覽">
           {nav.map(([Icon, label, active]) => (
-            <button className={`nav-item ${active ? "active" : ""}`} key={label}>
+            <button className={`nav-item ${active ? "active" : ""}`} key={label} type="button">
               <Icon size={19} /><span>{label}</span>
             </button>
           ))}
         </nav>
         <div className="sidebar-spacer" />
-        <button className="nav-item"><Settings size={19} /><span>設定</span></button>
+        <button className="nav-item" type="button"><Settings size={19} /><span>設定</span></button>
         <div className="storage-card">
           <Sparkles size={18} />
           <div><strong>離線優先</strong><small>素材保留在你的資料夾</small></div>
@@ -47,10 +49,20 @@ export function AppShell({ children, onNewProject, onChooseLibraryRoot }: Props)
       </aside>
       <main className="main">
         <header className="topbar">
-          <div className="search" role="search">搜尋影片、頻道或標籤… <kbd>Ctrl K</kbd></div>
+          <label className="search" role="search">
+            <span className="sr-only">搜尋影片、頻道或標籤</span>
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="搜尋影片、頻道或標籤…"
+              aria-label="搜尋影片、頻道或標籤"
+            />
+            <kbd>Ctrl K</kbd>
+          </label>
           <div className="topbar-actions">
-            <button className="secondary" onClick={onChooseLibraryRoot}>選擇 Library</button>
-            <button className="primary" onClick={onNewProject}>＋ 新增影片</button>
+            <button className="secondary" type="button" onClick={onChooseLibraryRoot}>1. 選擇 Library</button>
+            <button className="primary" type="button" onClick={onNewProject}>2. 新增影片</button>
           </div>
         </header>
         {children}

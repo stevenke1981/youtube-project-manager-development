@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::path::Path;
-use ytpm_core::{CreateProjectRequest, Project, ValidationReport, YtpmError};
+use ytpm_core::{CreateProjectRequest, Project, ProjectStatus, ValidationReport, YtpmError};
 
 #[derive(Debug, Serialize)]
 pub struct CommandError {
@@ -51,7 +51,15 @@ pub async fn project_validate(project_path: String) -> Result<ValidationReport, 
     ytpm_core::validate_project(Path::new(&project_path)).map_err(CommandError::from)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
+pub async fn project_update_status(
+    project_path: String,
+    status: ProjectStatus,
+) -> Result<Project, CommandError> {
+    ytpm_core::update_project_status(Path::new(&project_path), status).map_err(CommandError::from)
+}
+
+#[tauri::command(rename_all = "camelCase")]
 pub async fn project_archive(project_path: String) -> Result<Project, CommandError> {
     ytpm_core::archive_project(Path::new(&project_path)).map_err(CommandError::from)
 }

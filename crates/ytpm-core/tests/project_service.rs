@@ -2,7 +2,7 @@ use std::fs;
 use tempfile::tempdir;
 use ytpm_core::{
     archive_project, create_project, list_projects, migrate_project, restore_project,
-    validate_project, CreateProjectRequest, ProjectStatus,
+    update_project_status, validate_project, CreateProjectRequest, Project, ProjectStatus,
 };
 
 fn request(title: &str) -> CreateProjectRequest {
@@ -53,11 +53,73 @@ fn validation_reports_missing_directory() {
     fs::remove_dir(project_dir.join("06_subtitles/translations")).expect("remove empty dir");
 
     let report = validate_project(&project_dir).expect("validate");
-    assert!(report.valid);
+    assert!(!report.valid);
     assert!(report
         .issues
         .iter()
         .any(|issue| issue.code == "REQUIRED_DIRECTORY_MISSING"));
+}
+
+#[test]
+fn updates_status_and_persists_project_json() {
+    let temp = tempdir().expect("tempdir");
+    let project = create_project(temp.path(), request("狀態更新")).expect("create");
+    let project_dir = temp.path().join(&project.folder_name);
+
+    let updated = update_project_status(&project_dir, ProjectStatus::Script).expect("update");
+    assert_eq!(updated.status, ProjectStatus::Script);
+    assert_eq!(updated.progress, 25);
+
+    let persisted: Project = serde_json::from_str(
+        &fs::read_to_string(project_dir.join("project.json")).expect("read project"),
+    )
+    .expect("parse project");
+    assert_eq!(persisted.status, ProjectStatus::Script);
+    assert_eq!(persisted.progress, 25);
+    assert_eq!(persisted.updated_at, updated.updated_at);
+}
+
+#[test]
+fn status_update_does_not_reduce_existing_progress() {
+    let temp = tempdir().expect("tempdir");
+    let project = create_project(temp.path(), request("進度不倒退")).expect("create");
+    let project_dir = temp.path().join(&project.folder_name);
+    let project_file = project_dir.join("project.json");
+    let mut value: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&project_file).expect("read project"))
+            .expect("parse project");
+    value["progress"] = serde_json::Value::from(80);
+    fs::write(
+        &project_file,
+        serde_json::to_vec_pretty(&value).expect("serialize project"),
+    )
+    .expect("write fixture");
+
+    let updated = update_project_status(&project_dir, ProjectStatus::Research).expect("update");
+    assert_eq!(updated.status, ProjectStatus::Research);
+    assert_eq!(updated.progress, 80);
+
+    let persisted: Project =
+        serde_json::from_str(&fs::read_to_string(project_file).expect("read updated project"))
+            .expect("parse updated project");
+    assert_eq!(persisted.progress, 80);
+}
+
+#[test]
+fn rejects_direct_archived_status_and_preserves_project_json() {
+    let temp = tempdir().expect("tempdir");
+    let project = create_project(temp.path(), request("拒絕直接封存")).expect("create");
+    let project_dir = temp.path().join(&project.folder_name);
+    let project_file = project_dir.join("project.json");
+    let before = fs::read_to_string(&project_file).expect("read original project");
+
+    let error = update_project_status(&project_dir, ProjectStatus::Archived)
+        .expect_err("archived must use archive operation");
+    assert!(error.to_string().contains("archive"));
+    assert_eq!(
+        fs::read_to_string(project_file).expect("read unchanged project"),
+        before
+    );
 }
 
 #[test]
@@ -83,6 +145,17 @@ fn archives_and_restores_without_overwriting_project_data() {
         .join("project.json")
         .is_file());
     assert!(!archived_dir.exists());
+}
+
+#[test]
+fn list_projects_excludes_archived_projects_from_active_library() {
+    let temp = tempdir().expect("tempdir");
+    let project = create_project(temp.path(), request("不混入封存列表")).expect("create");
+    let project_dir = temp.path().join(&project.folder_name);
+    archive_project(&project_dir).expect("archive");
+
+    let listed = list_projects(temp.path()).expect("list active projects");
+    assert!(listed.is_empty());
 }
 
 #[test]

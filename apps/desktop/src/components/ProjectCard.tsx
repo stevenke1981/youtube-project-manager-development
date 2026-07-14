@@ -22,7 +22,7 @@ export function ProjectCard({ project, onOpen }: { project: Project; onOpen: () 
       <div className={`thumbnail status-${project.status}`}>
         <div className="thumbnail-overlay">
           <span>{project.aspect_ratio}</span>
-          <button aria-label="更多操作"><MoreHorizontal size={18} /></button>
+          <button type="button" aria-label="Step 3：開啟專案" onClick={onOpen}><MoreHorizontal size={18} /></button>
         </div>
         <strong>{project.title.slice(0, 18)}</strong>
       </div>
@@ -36,7 +36,7 @@ export function ProjectCard({ project, onOpen }: { project: Project; onOpen: () 
         <div className="progress"><span style={{ width: `${project.progress}%` }} /></div>
         <div className="meta-row">
           <span><Calendar size={15} /> {project.planned_publish_at ? new Date(project.planned_publish_at).toLocaleDateString("zh-TW") : "未排程"}</span>
-          <button className="text-button" onClick={onOpen}><FolderOpen size={15} /> 開啟</button>
+          <button className="text-button" type="button" onClick={onOpen}><FolderOpen size={15} /> Step 3: 開啟</button>
         </div>
       </div>
     </article>

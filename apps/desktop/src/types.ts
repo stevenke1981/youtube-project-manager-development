@@ -42,3 +42,19 @@ export interface CreateProjectRequest {
   targetDurationSeconds?: number;
   tags: string[];
 }
+
+export type ValidationSeverity = "info" | "warning" | "error";
+
+export interface ValidationIssue {
+  code: string;
+  severity: ValidationSeverity;
+  message: string;
+  path: string | null;
+  suggested_action: string | null;
+}
+
+export interface ValidationReport {
+  valid: boolean;
+  project: Project | null;
+  issues: ValidationIssue[];
+}

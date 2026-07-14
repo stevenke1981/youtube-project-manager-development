@@ -10,5 +10,5 @@ pub use migration::CURRENT_SCHEMA_VERSION;
 pub use model::{CreateProjectRequest, Project, ProjectStatus, ValidationIssue, ValidationReport};
 pub use project_service::{
     archive_project, create_project, list_projects, migrate_project, restore_project,
-    validate_project,
+    update_project_status, validate_project,
 };

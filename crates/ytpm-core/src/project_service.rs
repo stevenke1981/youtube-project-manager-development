@@ -8,6 +8,7 @@ use crate::model::{
 use chrono::{Local, Utc};
 use serde_json::Value;
 use std::collections::HashSet;
+use std::ffi::OsStr;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -109,7 +110,11 @@ pub fn list_projects(root: &Path) -> Result<Vec<Project>> {
             let path = e.path().unwrap_or(root).to_path_buf();
             YtpmError::InvalidProject(format!("掃描 {} 失敗：{e}", path.display()))
         })?;
-        if entry.file_type().is_file() && entry.file_name() == "project.json" {
+        let is_archived = entry
+            .path()
+            .components()
+            .any(|component| component.as_os_str() == OsStr::new("_archive"));
+        if !is_archived && entry.file_type().is_file() && entry.file_name() == "project.json" {
             projects.push(read_project(entry.path())?);
         }
     }
@@ -152,7 +157,7 @@ pub fn validate_project(project_dir: &Path) -> Result<ValidationReport> {
         } else if !path.is_dir() {
             issues.push(ValidationIssue {
                 code: "REQUIRED_DIRECTORY_MISSING".into(),
-                severity: ValidationSeverity::Warning,
+                severity: ValidationSeverity::Error,
                 message: format!("缺少標準資料夾：{relative}"),
                 path: Some(path.display().to_string()),
                 suggested_action: Some("建立缺少的資料夾；不要移動既有素材".into()),
@@ -168,6 +173,28 @@ pub fn validate_project(project_dir: &Path) -> Result<ValidationReport> {
         project,
         issues,
     })
+}
+
+/// Updates a project's workflow status while preserving the portable project.json source of truth.
+pub fn update_project_status(project_dir: &Path, status: ProjectStatus) -> Result<Project> {
+    ensure_no_parent_components(project_dir)?;
+    reject_reparse_points(project_dir)?;
+
+    let project_file = project_dir.join("project.json");
+    let mut project = read_project(&project_file)?;
+    if matches!(&status, ProjectStatus::Archived) {
+        return Err(YtpmError::InvalidInput(
+            "不可直接將狀態設為 archived；請使用 archive 操作".into(),
+        ));
+    }
+
+    project.status = status;
+    project.progress = project
+        .progress
+        .max(minimum_progress_for_status(&project.status));
+    project.updated_at = Utc::now();
+    atomic_write_json(&project_file, &project)?;
+    Ok(project)
 }
 
 /// Migrates a v1 project in place after creating a local backup snapshot.
@@ -461,6 +488,22 @@ fn atomic_write_json<T: serde::Serialize>(path: &Path, value: &T) -> Result<()> 
         let _ = fs::remove_file(&temp_path);
     }
     result
+}
+
+fn minimum_progress_for_status(status: &ProjectStatus) -> u8 {
+    match status {
+        ProjectStatus::Idea => 0,
+        ProjectStatus::Research => 5,
+        ProjectStatus::Script => 25,
+        ProjectStatus::Voice => 40,
+        ProjectStatus::Visuals => 55,
+        ProjectStatus::Editing => 75,
+        ProjectStatus::Subtitles => 85,
+        ProjectStatus::Thumbnail => 90,
+        ProjectStatus::Review => 95,
+        ProjectStatus::Scheduled | ProjectStatus::Published => 100,
+        ProjectStatus::Archived => 0,
+    }
 }
 
 fn write_operation_journal(path: &Path, journal: &OperationJournal) -> Result<()> {

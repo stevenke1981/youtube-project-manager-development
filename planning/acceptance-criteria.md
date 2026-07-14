@@ -18,7 +18,7 @@ Given 專案被搬到另一個 Library，When 掃描，Then 可由 `project.json
 
 ## AC-05 驗證
 
-Given 缺少字幕資料夾，When 驗證，Then 回傳 machine-readable issue code、路徑、severity 與修復建議。
+Given 缺少字幕資料夾，When 驗證，Then 回傳 machine-readable issue code、路徑、`error` severity 與修復建議，且 `valid=false`。
 
 ## AC-06 App 移除
 
@@ -27,3 +27,7 @@ Given 使用者解除安裝 App，Then Library 內的所有影片專案與素材
 ## AC-07 Agent
 
 Given Agent 執行 `ytpm list --json`，Then stdout 只包含有效 JSON，診斷訊息輸出 stderr，exit code 符合規格。
+
+## AC-08 編號化操作流程
+
+Given 使用者首次開啟 App，When 尚未選擇 Library、建立專案或進入工作區，Then 畫面分別顯示 `Step 1`、`Step 2`、`Step 3` 與 `Next step:`，且下一步按鈕文字直接指出可執行操作。

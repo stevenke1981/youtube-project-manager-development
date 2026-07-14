@@ -8,6 +8,7 @@ pub fn run() {
             commands::project_create,
             commands::project_list,
             commands::project_validate,
+            commands::project_update_status,
             commands::project_archive,
             commands::project_restore,
             commands::project_migrate

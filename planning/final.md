@@ -15,6 +15,9 @@
 - schema v1→v2 migration：先建立 `.ytpm-backup/` snapshot，再以 temp + rename 寫回；CLI 提供 `migrate`。
 - Tauri command 回傳結構化錯誤 DTO；CLI 實作 filesystem/project/argument exit code。
 - Desktop Library root 使用 folder picker 與本機 storage，不再寫死開發者磁碟路徑。
+- Desktop workflow 已可操作：Step 1/2/3 導引、搜尋／狀態篩選／排序、validation 面板、status 更新與確認後封存。
+- 缺少必要標準資料夾時 validation 會明確失敗；active list 不會混入 `_archive` 專案。
+- React 對 Tauri structured error 會顯示人類訊息與建議動作，不會顯示 `[object Object]`。
 - Schema、SQLite migration、範本、CI、PowerShell scripts。
 
 ## 驗證狀態
@@ -26,12 +29,13 @@
 - [x] `npm install`、`npm run typecheck`、`npm run test`、`npm run build`。
 - [x] CLI 中文 Windows path smoke：create/list/validate。
 - [x] `npm run desktop:build`：產生 MSI、NSIS 與 release executable。
+- [x] core 12 integration tests、React 6 tests、workspace clippy/test、中文／空白路徑 smoke。
 
 ## 下一個開發者第一步
 
 1. 完成 Windows junction 實機 smoke 與 operation journal 啟動恢復。
 2. 完成 M1 SQLite index/rebuild，再進入 Asset Catalog。
-3. 加入 Tauri/CLI contract tests 與 persistent error center。
+3. 加入 Tauri/CLI contract tests、persistent error center 與真正的 Task/Asset/Editor workspace。
 
 ## 回滾
 
