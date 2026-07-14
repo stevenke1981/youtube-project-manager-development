@@ -1,8 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  Asset,
+  AssetCatalog,
   CreateProjectRequest,
+  DocumentWriteResult,
+  IndexReport,
   Project,
   ProjectStatus,
+  RecoveryReport,
+  Task,
+  TaskCreateRequest,
+  TaskStatus,
+  TaskUpdatePatch,
   ValidationReport
 } from "../types";
 
@@ -73,14 +82,165 @@ let demoProjects: Project[] = [
   }
 ];
 
+const demoTasks = new Map<string, Task[]>();
+const demoAssets = new Map<string, Asset[]>();
+const demoDocuments = new Map<string, string>();
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function makeId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `demo-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function pathKey(value: string): string {
+  return value.trim().replace(/[\\/]+/g, "\\").toLocaleLowerCase();
+}
+
+function cloneTask(task: Task): Task {
+  return { ...task, related_asset_ids: [...task.related_asset_ids], acceptance_criteria: [...task.acceptance_criteria] };
+}
+
+function getDemoTasks(projectPath: string): Task[] {
+  const key = pathKey(projectPath);
+  const existing = demoTasks.get(key);
+  if (existing) return existing;
+  const createdAt = nowIso();
+  const initial: Task[] = [{
+    id: makeId(),
+    title: "確認下一個可交付成果",
+    description: "把這支影片目前的阻塞事項拆成可驗收的小步驟。",
+    status: "todo",
+    priority: "normal",
+    due_at: null,
+    completed_at: null,
+    related_asset_ids: [],
+    acceptance_criteria: [],
+    order_key: 0,
+    created_at: createdAt,
+    updated_at: createdAt
+  }];
+  demoTasks.set(key, initial);
+  return initial;
+}
+
+function getDemoAssets(projectPath: string): Asset[] {
+  const key = pathKey(projectPath);
+  const existing = demoAssets.get(key);
+  if (existing) return existing;
+  const createdAt = nowIso();
+  const initial: Asset[] = [
+    {
+      id: makeId(),
+      kind: "script",
+      relative_path: "02_script/script.md",
+      display_name: "script.md",
+      state: "available",
+      source_type: "created",
+      generator: null,
+      model: null,
+      prompt: null,
+      sha256: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+      size_bytes: 4280,
+      duration_ms: null,
+      width: null,
+      height: null,
+      version_group_id: null,
+      version_number: 1,
+      is_adopted: true,
+      created_at: createdAt,
+      updated_at: createdAt
+    },
+    {
+      id: makeId(),
+      kind: "image",
+      relative_path: "04_visuals/storyboard_01.png",
+      display_name: "storyboard_01.png",
+      state: "missing",
+      source_type: "generated",
+      generator: "demo",
+      model: "demo-image",
+      prompt: null,
+      sha256: "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+      size_bytes: 284000,
+      duration_ms: null,
+      width: 1280,
+      height: 720,
+      version_group_id: null,
+      version_number: 1,
+      is_adopted: false,
+      created_at: createdAt,
+      updated_at: createdAt
+    },
+    {
+      id: makeId(),
+      kind: "subtitle",
+      relative_path: "07_subtitles/subtitles.srt",
+      display_name: "subtitles.srt",
+      state: "available",
+      source_type: "created",
+      generator: null,
+      model: null,
+      prompt: null,
+      sha256: null,
+      size_bytes: 912,
+      duration_ms: null,
+      width: null,
+      height: null,
+      version_group_id: null,
+      version_number: 1,
+      is_adopted: false,
+      created_at: createdAt,
+      updated_at: createdAt
+    }
+  ];
+  demoAssets.set(key, initial);
+  return initial;
+}
+
 function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
 export async function listProjects(rootPath: string): Promise<Project[]> {
   if (!rootPath.trim()) return [];
-  if (!isTauri()) return [...demoProjects];
-  return invoke<Project[]>("project_list", { rootPath });
+  return projectIndexSearch(rootPath);
+}
+
+export async function projectIndexRebuild(rootPath: string): Promise<IndexReport> {
+  if (!rootPath.trim()) throw new Error("請先選擇影片 Library root，才能重建索引");
+  if (!isTauri()) {
+    return {
+      db_path: `${rootPath.replace(/[\\/]+$/, "")}\\.ytpm\\index.db`,
+      scanned: demoProjects.length,
+      indexed: demoProjects.length,
+      invalid: 0,
+      rebuilt_at: nowIso()
+    };
+  }
+  return invoke<IndexReport>("project_index_rebuild", { rootPath });
+}
+
+export async function projectIndexSearch(rootPath: string, query?: string, status?: ProjectStatus): Promise<Project[]> {
+  if (!rootPath.trim()) return [];
+  if (!isTauri()) {
+    const normalizedQuery = query?.trim().toLocaleLowerCase("zh-TW") ?? "";
+    return demoProjects.filter((project) => {
+      const searchable = [project.title, project.channel ?? "", project.series ?? "", ...project.tags]
+        .join(" ")
+        .toLocaleLowerCase("zh-TW");
+      return (!normalizedQuery || searchable.includes(normalizedQuery)) && (!status || project.status === status);
+    }).map((project) => ({ ...project }));
+  }
+  await projectRecoverJournal(rootPath);
+  return invoke<Project[]>("project_index_search", {
+    rootPath,
+    ...(query?.trim() ? { query: query.trim() } : {}),
+    ...(status ? { status } : {})
+  });
 }
 
 export async function createProject(
@@ -91,15 +251,20 @@ export async function createProject(
     throw new Error("請先選擇影片 Library root");
   }
   if (!isTauri()) {
-    return {
+    const createdAt = nowIso();
+    const project = {
       ...demoProjects[0],
-      id: crypto.randomUUID(),
+      id: makeId(),
       title: request.title,
-      folder_name: `${new Date().toISOString().slice(0, 10)}_${request.title}`,
+      folder_name: `${createdAt.slice(0, 10)}_${request.title}`,
       channel: request.channel ?? null,
       progress: 0,
-      status: "idea"
+      status: "idea" as const,
+      created_at: createdAt,
+      updated_at: createdAt
     };
+    demoProjects = [project, ...demoProjects];
+    return project;
   }
   return invoke<Project>("project_create", { rootPath, request });
 }
@@ -149,4 +314,128 @@ export async function archiveProject(projectPath: string): Promise<Project> {
     return archived;
   }
   return invoke<Project>("project_archive", { projectPath });
+}
+
+export async function taskList(projectPath: string): Promise<Task[]> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法讀取任務");
+  if (!isTauri()) return getDemoTasks(projectPath).map(cloneTask);
+  return invoke<Task[]>("task_list", { projectPath });
+}
+
+export async function taskCreate(projectPath: string, request: TaskCreateRequest): Promise<Task> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法建立任務");
+  if (!isTauri()) {
+    const tasks = getDemoTasks(projectPath);
+    const createdAt = nowIso();
+    const task: Task = {
+      id: makeId(),
+      title: request.title,
+      description: request.description,
+      status: "todo",
+      priority: request.priority,
+      due_at: null,
+      completed_at: null,
+      related_asset_ids: [],
+      acceptance_criteria: [],
+      order_key: tasks.length ? Math.max(...tasks.map((item) => item.order_key)) + 1 : 0,
+      created_at: createdAt,
+      updated_at: createdAt
+    };
+    tasks.push(task);
+    return cloneTask(task);
+  }
+  return invoke<Task>("task_create", { projectPath, request });
+}
+
+export async function taskUpdate(projectPath: string, taskId: string, patch: TaskUpdatePatch): Promise<Task> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法更新任務");
+  if (!isTauri()) {
+    const tasks = getDemoTasks(projectPath);
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task) throw new Error("示範模式找不到這個任務");
+    Object.assign(task, patch, { updated_at: nowIso() });
+    return cloneTask(task);
+  }
+  return invoke<Task>("task_update", { projectPath, taskId, patch });
+}
+
+export async function taskMove(projectPath: string, taskId: string, status: TaskStatus, orderKey: number): Promise<Task> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法移動任務");
+  if (!isTauri()) {
+    const tasks = getDemoTasks(projectPath);
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task) throw new Error("示範模式找不到這個任務");
+    Object.assign(task, {
+      status,
+      order_key: orderKey,
+      completed_at: status === "done" ? nowIso() : null,
+      updated_at: nowIso()
+    });
+    return cloneTask(task);
+  }
+  return invoke<Task>("task_move", { projectPath, taskId, status, orderKey });
+}
+
+export async function assetScan(projectPath: string): Promise<AssetCatalog> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法掃描素材");
+  if (!isTauri()) {
+    const assets = getDemoAssets(projectPath);
+    return {
+      project_path: projectPath,
+      scanned_at: nowIso(),
+      assets: assets.map((asset) => ({ ...asset })),
+      total: assets.length,
+      available: assets.filter((asset) => asset.state === "available").length,
+      missing: assets.filter((asset) => asset.state === "missing").length,
+      invalid: assets.filter((asset) => asset.state === "error").length
+    };
+  }
+  return invoke<AssetCatalog>("asset_scan", { projectPath });
+}
+
+export async function assetList(projectPath: string): Promise<Asset[]> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法讀取素材");
+  if (!isTauri()) return getDemoAssets(projectPath).map((asset) => ({ ...asset }));
+  return invoke<Asset[]>("asset_list", { projectPath });
+}
+
+export async function documentRead(projectPath: string, relativePath: string): Promise<string> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法讀取文件");
+  if (!relativePath.trim()) throw new Error("文件路徑不可為空");
+  if (!isTauri()) {
+    const key = `${pathKey(projectPath)}::${relativePath}`;
+    const existing = demoDocuments.get(key);
+    if (existing !== undefined) return existing;
+    const project = demoProjects.find((item) => projectPath.includes(item.folder_name));
+    const initial = relativePath === "02_script/script.md"
+      ? `# ${project?.title ?? "影片腳本"}\n\n## 開場\n\n在這裡整理第一版腳本。\n`
+      : `# ${project?.title ?? "發布描述"}\n\n在這裡撰寫 YouTube 描述與發布資訊。\n`;
+    demoDocuments.set(key, initial);
+    return initial;
+  }
+  return invoke<string>("document_read", { projectPath, relativePath });
+}
+
+export async function documentWrite(projectPath: string, relativePath: string, content: string): Promise<DocumentWriteResult> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法儲存文件");
+  if (!relativePath.trim()) throw new Error("文件路徑不可為空");
+  if (!isTauri()) {
+    demoDocuments.set(`${pathKey(projectPath)}::${relativePath}`, content);
+    return { saved_at: nowIso() };
+  }
+  return invoke<DocumentWriteResult>("document_write", { projectPath, relativePath, content });
+}
+
+export async function projectRecoverJournal(rootPath: string): Promise<RecoveryReport> {
+  if (!rootPath.trim()) throw new Error("請先選擇影片 Library root，才能檢查 journal");
+  if (!isTauri()) {
+    return {
+      recovered: false,
+      had_journal: false,
+      journal_path: null,
+      message: "沒有待恢復的操作 journal。",
+      actions: []
+    };
+  }
+  return invoke<RecoveryReport>("project_recover_journal", { rootPath });
 }

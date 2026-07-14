@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, CheckCircle2, Circle, Clipboard, FolderOpen, Mic2, Image, Captions, Video } from "lucide-react";
-import { archiveProject, getErrorMessage, updateProjectStatus, validateProject } from "../lib/commands";
-import type { Project, ProjectStatus, ValidationReport } from "../types";
+import { archiveProject, getErrorMessage, projectRecoverJournal, updateProjectStatus, validateProject } from "../lib/commands";
+import type { AssetKind, Project, ProjectStatus, RecoveryReport, ValidationReport } from "../types";
+import { AssetCatalogPanel } from "./AssetCatalogPanel";
+import { DocumentEditor } from "./DocumentEditor";
 import { StepGuide } from "./StepGuide";
+import { TaskBoard } from "./TaskBoard";
 
 const tabs = ["總覽", "任務", "研究", "腳本", "語音", "圖片", "影片", "字幕", "封面", "發布", "歷史", "設定"] as const;
 type WorkspaceTab = typeof tabs[number];
+const assetKindByTab: Partial<Record<WorkspaceTab, AssetKind>> = { 研究: "research", 語音: "voice", 圖片: "image", 影片: "video", 字幕: "subtitle" };
 
 const statusLabels: Record<ProjectStatus, string> = {
   idea: "構想",
@@ -90,17 +94,21 @@ export function getNextAction(project: Project, report: ValidationReport | null)
 
 type Props = {
   project: Project;
+  rootPath: string;
   projectPath: string;
   onBack: () => void;
   onProjectUpdated: (project: Project) => void;
   onArchived: () => void;
 };
 
-export function ProjectWorkspace({ project, projectPath, onBack, onProjectUpdated, onArchived }: Props) {
+export function ProjectWorkspace({ project, rootPath, projectPath, onBack, onProjectUpdated, onArchived }: Props) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("總覽");
   const [validationReport, setValidationReport] = useState<ValidationReport | null>(null);
   const [validationLoading, setValidationLoading] = useState(true);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [recoveryReport, setRecoveryReport] = useState<RecoveryReport | null>(null);
+  const [recoveryLoading, setRecoveryLoading] = useState(true);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -120,7 +128,20 @@ export function ProjectWorkspace({ project, projectPath, onBack, onProjectUpdate
     }
   }, [onProjectUpdated, projectPath]);
 
-  useEffect(() => { void loadValidation(); }, [loadValidation]);
+  const recoverAndValidate = useCallback(async () => {
+    setRecoveryLoading(true);
+    setRecoveryError(null);
+    try {
+      setRecoveryReport(await projectRecoverJournal(rootPath));
+    } catch (reason) {
+      setRecoveryError(getErrorMessage(reason));
+    } finally {
+      setRecoveryLoading(false);
+      await loadValidation();
+    }
+  }, [loadValidation, rootPath]);
+
+  useEffect(() => { void recoverAndValidate(); }, [recoverAndValidate]);
 
   async function handleStatusChange(nextStatus: ProjectStatus) {
     if (nextStatus === project.status) return;
@@ -188,12 +209,15 @@ export function ProjectWorkspace({ project, projectPath, onBack, onProjectUpdate
           </div>
         </div>
         <nav className="workspace-tabs" aria-label="專案工作區分頁" role="tablist">
-          {tabs.map((tab) => <button type="button" role="tab" aria-selected={activeTab === tab} className={activeTab === tab ? "active" : ""} key={tab} onClick={() => setActiveTab(tab)}>{tab}</button>)}
+          {tabs.map((tab) => <button type="button" role="tab" aria-label={`Step 3: 開啟${tab}頁`} aria-selected={activeTab === tab} className={activeTab === tab ? "active" : ""} key={tab} onClick={() => setActiveTab(tab)}><span className="tab-step">3</span>{tab}</button>)}
         </nav>
       </div>
 
       <div className="workspace-content">
         <StepGuide activeStep={3} className="workspace-guide" />
+        {recoveryLoading && <div className="inline-status workspace-feedback" role="status">Step 3: 正在檢查並恢復操作 journal，完成後才會 validation…</div>}
+        {recoveryError && <div className="workspace-feedback error-banner" role="alert">journal recovery 失敗：{recoveryError}<button className="secondary" type="button" onClick={() => void recoverAndValidate()}>Step 3: 重試 recovery</button></div>}
+        {recoveryReport?.recovered && <div className="workspace-feedback success-banner" role="status">已完成 journal recovery：{recoveryReport.message || "未完成的操作已恢復。"}</div>}
         {(statusError || statusMessage) && <div className={statusError ? "workspace-feedback error-banner" : "workspace-feedback success-banner"} role={statusError ? "alert" : "status"}>{statusError || statusMessage}</div>}
         <section className="next-action"><div><span>建議下一步</span><h2>{nextAction.title}</h2><p>{nextAction.detail}</p></div><button className="primary" type="button" onClick={handleNextAction}>{nextAction.buttonLabel}</button></section>
 
@@ -202,6 +226,14 @@ export function ProjectWorkspace({ project, projectPath, onBack, onProjectUpdate
             <section className="panel"><div className="section-heading"><div><h2>製作進度</h2><p>{progress}% 已完成 · 目前階段：{statusLabels[project.status]}</p></div></div><div className="large-progress"><span style={{ width: `${progress}%` }} /></div><Milestones progress={progress} /></section>
             <ValidationPanel report={validationReport} loading={validationLoading} error={validationError} onRetry={() => void loadValidation()} />
           </div>
+        ) : activeTab === "任務" ? (
+          <TaskBoard projectPath={projectPath} />
+        ) : activeTab === "腳本" ? (
+          <DocumentEditor projectPath={projectPath} documentType="script" />
+        ) : activeTab === "發布" ? (
+          <DocumentEditor projectPath={projectPath} documentType="publish" />
+        ) : assetKindByTab[activeTab] ? (
+          <AssetCatalogPanel projectPath={projectPath} kindFilter={assetKindByTab[activeTab]} />
         ) : (
           <section className="panel tab-panel" role="tabpanel">
             <span className="eyebrow">STEP 3 · {activeTab}</span>

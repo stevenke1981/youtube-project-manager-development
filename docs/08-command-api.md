@@ -10,6 +10,12 @@ ytpm structure [--json]
 ytpm archive --path PROJECT_PATH [--json]
 ytpm restore --path ARCHIVED_PROJECT_PATH [--json]
 ytpm migrate --path PROJECT_PATH [--json]
+ytpm index rebuild --root LIBRARY_ROOT [--json]
+ytpm index search --root LIBRARY_ROOT [--query TEXT] [--status STATUS] [--json]
+ytpm task list|create|update|move --path PROJECT_PATH ... [--json]
+ytpm asset scan|list --path PROJECT_PATH [--json]
+ytpm document read|write --path PROJECT_PATH --relative-path RELATIVE_PATH ... [--json]
+ytpm journal recover --root LIBRARY_ROOT [--json]
 ```
 
 Exit codes：
@@ -59,6 +65,28 @@ Request：`projectPath`，必須指向 `_archive` 的直接子資料夾。還原
 ### project_migrate
 
 Request：`projectPath`。將 v1 `project.json` 備份至專案內 `.ytpm-backup/` 後，以 temp + rename 寫入目前 schema version。
+
+### project_index_rebuild / project_index_search
+
+以 `project.json` 重建或查詢 Library 的 SQLite derived index。資料庫位於
+`LIBRARY_ROOT/.ytpm/index.sqlite3`，可安全刪除後重新建立；搜尋前會重建以反映外部檔案變更。
+
+### task_list / task_create / task_update / task_move
+
+以專案內 `tasks.json` 為真實來源，支援五欄 Kanban 狀態、順序、完成時間與 atomic write。
+`task_update` 的 nullable 欄位可明確清除為 `null`。
+
+### asset_scan / asset_list
+
+掃描專案相對路徑並更新 `assets.json`；忽略 metadata／`.ytpm`／`.ytpm-backup`，計算 SHA-256，保留 missing record，且拒絕 symlink/junction/reparse path。
+
+### document_read / document_write
+
+只允許腳本、發布 metadata 與字幕白名單路徑；寫入使用 temp file + rename，桌面編輯器以 800ms debounce autosave 並保留失敗草稿。
+
+### project_recover_journal
+
+檢查 Library root 的 `.ytpm-operation.json`。只有 `prepared` 或可確認 `moved` 狀態才會自動清理；目的地已有專案 metadata 時會補齊 archive/restore 狀態，歧義狀態保留 journal 並回報錯誤。
 
 ## Future Job API
 

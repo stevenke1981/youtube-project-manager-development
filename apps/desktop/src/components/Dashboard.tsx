@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, CalendarClock, CheckCircle2, Film, Plus } from "lucide-react";
-import type { Project, ProjectStatus } from "../types";
+import type { IndexReport, Project, ProjectStatus } from "../types";
 import { ProjectCard } from "./ProjectCard";
 import { StepGuide } from "./StepGuide";
 
@@ -91,9 +91,13 @@ type Props = {
   onSearchChange: (value: string) => void;
   onOpen: (project: Project) => void;
   onNewProject: () => void;
+  indexStatus: "idle" | "indexing" | "ready" | "error";
+  indexReport: IndexReport | null;
+  indexError: string | null;
+  onRebuildIndex: () => void;
 };
 
-export function Dashboard({ projects, searchQuery, onSearchChange, onOpen, onNewProject }: Props) {
+export function Dashboard({ projects, searchQuery, onSearchChange, onOpen, onNewProject, indexStatus, indexReport, indexError, onRebuildIndex }: Props) {
   const [statusFilter, setStatusFilter] = useState<DashboardStatusFilter>("all");
   const [sort, setSort] = useState<DashboardSort>("recent");
   const visibleProjects = useMemo(
@@ -117,7 +121,10 @@ export function Dashboard({ projects, searchQuery, onSearchChange, onOpen, onNew
           <h1>影片製作總覽</h1>
           <p>掌握每支影片的下一步、缺漏與發布時程。</p>
         </div>
-        <span className="date-chip">離線索引 · {projects.length} 個專案</span>
+        <div className={`index-status index-status-${indexStatus}`} role="status">
+          <div><strong>{indexStatus === "indexing" ? "索引建立中…" : indexStatus === "error" ? "索引錯誤" : indexStatus === "ready" ? "索引已就緒" : "尚未建立索引"}</strong><small>{indexReport ? `掃描 ${indexReport.scanned} · 索引 ${indexReport.indexed} · invalid ${indexReport.invalid}` : `${projects.length} 個專案`}</small>{indexError && <small className="index-error">{indexError}</small>}</div>
+          <button className="secondary" type="button" onClick={onRebuildIndex} disabled={indexStatus === "indexing"}>Step 1: 重建索引</button>
+        </div>
       </section>
 
       <StepGuide activeStep={2} className="dashboard-guide" />

@@ -6,6 +6,7 @@ use crate::model::{
     ValidationSeverity,
 };
 use chrono::{Local, Utc};
+use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::ffi::OsStr;
@@ -16,13 +17,21 @@ use std::path::{Component, Path, PathBuf};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, Deserialize)]
 struct OperationJournal {
     id: String,
-    operation: &'static str,
+    operation: String,
     source: PathBuf,
     destination: PathBuf,
-    phase: &'static str,
+    phase: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, Deserialize)]
+pub struct RecoveryReport {
+    pub journal_found: bool,
+    pub journal_cleared: bool,
+    pub operation: Option<String>,
+    pub phase: Option<String>,
 }
 
 pub fn create_project(root: &Path, request: CreateProjectRequest) -> Result<Project> {
@@ -100,6 +109,7 @@ pub fn create_project(root: &Path, request: CreateProjectRequest) -> Result<Proj
 }
 
 pub fn list_projects(root: &Path) -> Result<Vec<Project>> {
+    recover_operation_journal(root)?;
     if !root.exists() {
         return Ok(Vec::new());
     }
@@ -120,6 +130,149 @@ pub fn list_projects(root: &Path) -> Result<Vec<Project>> {
     }
     projects.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
     Ok(projects)
+}
+
+/// Validates and clears a completed or not-yet-started archive/restore journal.
+///
+/// Ambiguous filesystem states are deliberately left untouched for manual recovery.
+pub fn recover_operation_journal(library_root: &Path) -> Result<RecoveryReport> {
+    let journal_path = library_root.join(".ytpm-operation.json");
+    match fs::symlink_metadata(&journal_path) {
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(RecoveryReport::default());
+        }
+        Err(error) => return Err(YtpmError::io(&journal_path, error)),
+    }
+
+    reject_reparse_points(library_root).map_err(|error| {
+        YtpmError::InvalidProject(format!(
+            "operation journal 的 Library root 不安全，請移除 symlink/junction 後重試：{error}"
+        ))
+    })?;
+    reject_reparse_points(&journal_path).map_err(|error| {
+        YtpmError::InvalidProject(format!(
+            "operation journal 路徑不安全，請人工檢查 {}：{error}",
+            journal_path.display()
+        ))
+    })?;
+
+    const MAX_JOURNAL_BYTES: u64 = 64 * 1024;
+    let metadata =
+        fs::metadata(&journal_path).map_err(|error| YtpmError::io(&journal_path, error))?;
+    if metadata.len() > MAX_JOURNAL_BYTES {
+        return Err(YtpmError::InvalidProject(format!(
+            "operation journal 超過 {} KiB，請人工檢查並移除或修復 {}",
+            MAX_JOURNAL_BYTES / 1024,
+            journal_path.display()
+        )));
+    }
+    let content = fs::read_to_string(&journal_path).map_err(|error| {
+        YtpmError::InvalidProject(format!(
+            "無法讀取 operation journal {}：{error}；請人工檢查檔案",
+            journal_path.display()
+        ))
+    })?;
+    let journal: OperationJournal = serde_json::from_str(&content).map_err(|error| {
+        YtpmError::InvalidProject(format!(
+            "operation journal JSON 無效：{error}；請人工檢查 {}",
+            journal_path.display()
+        ))
+    })?;
+
+    if !matches!(journal.operation.as_str(), "archive" | "restore") {
+        return Err(invalid_journal_state(
+            &journal_path,
+            format!(
+                "不支援 operation={}，只允許 archive 或 restore",
+                journal.operation
+            ),
+        ));
+    }
+    if !matches!(journal.phase.as_str(), "prepared" | "moved") {
+        return Err(invalid_journal_state(
+            &journal_path,
+            format!("不支援 phase={}，只允許 prepared 或 moved", journal.phase),
+        ));
+    }
+
+    let root = absolute_path_without_parent(library_root).map_err(|error| {
+        invalid_journal_state(&journal_path, format!("Library root 無效：{error}"))
+    })?;
+    let source = validate_journal_path(&root, &journal.source, "source", &journal_path)?;
+    let destination =
+        validate_journal_path(&root, &journal.destination, "destination", &journal_path)?;
+    let source_exists = path_exists(&source)?;
+    let destination_exists = path_exists(&destination)?;
+
+    let state_is_safe = match journal.phase.as_str() {
+        "prepared" => source_exists && !destination_exists,
+        "moved" => !source_exists && destination_exists,
+        _ => false,
+    };
+    if !state_is_safe {
+        return Err(invalid_journal_state(
+            &journal_path,
+            format!(
+                "phase={} 與目前 filesystem 狀態不一致（source_exists={}, destination_exists={}）；請確認後手動完成或回復移動",
+                journal.phase, source_exists, destination_exists
+            ),
+        ));
+    }
+
+    if journal.phase == "moved" {
+        let project_path = destination.join("project.json");
+        if path_exists(&project_path)? {
+            let mut project = read_project(&project_path).map_err(|error| {
+                invalid_journal_state(
+                    &journal_path,
+                    format!("已移動的專案 metadata 無法讀取：{error}"),
+                )
+            })?;
+            let folder_name = destination
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| {
+                    invalid_journal_state(&journal_path, "destination 資料夾名稱無效".into())
+                })?
+                .to_string();
+            let changed = match journal.operation.as_str() {
+                "archive" if project.status != ProjectStatus::Archived => {
+                    project.folder_name = folder_name;
+                    project.archived_from_status = Some(project.status.clone());
+                    project.status = ProjectStatus::Archived;
+                    project.updated_at = Utc::now();
+                    true
+                }
+                "restore" if project.status == ProjectStatus::Archived => {
+                    project.folder_name = folder_name;
+                    project.status = project
+                        .archived_from_status
+                        .take()
+                        .unwrap_or(ProjectStatus::Idea);
+                    project.updated_at = Utc::now();
+                    true
+                }
+                _ => false,
+            };
+            if changed {
+                atomic_write_json(&project_path, &project).map_err(|error| {
+                    invalid_journal_state(
+                        &journal_path,
+                        format!("已移動專案但 metadata 尚未完成：{error}"),
+                    )
+                })?;
+            }
+        }
+    }
+
+    fs::remove_file(&journal_path).map_err(|error| YtpmError::io(&journal_path, error))?;
+    Ok(RecoveryReport {
+        journal_found: true,
+        journal_cleared: true,
+        operation: Some(journal.operation),
+        phase: Some(journal.phase),
+    })
 }
 
 pub fn validate_project(project_dir: &Path) -> Result<ValidationReport> {
@@ -267,10 +420,10 @@ pub fn archive_project(project_dir: &Path) -> Result<Project> {
         &journal_path,
         &OperationJournal {
             id: journal_id.clone(),
-            operation: "archive",
+            operation: "archive".into(),
             source: project_dir.to_path_buf(),
             destination: destination.clone(),
-            phase: "prepared",
+            phase: "prepared".into(),
         },
     )?;
 
@@ -283,10 +436,10 @@ pub fn archive_project(project_dir: &Path) -> Result<Project> {
         &journal_path,
         &OperationJournal {
             id: journal_id.clone(),
-            operation: "archive",
+            operation: "archive".into(),
             source: project_dir.to_path_buf(),
             destination: destination.clone(),
-            phase: "moved",
+            phase: "moved".into(),
         },
     ) {
         if let Err(rollback_error) = fs::rename(&destination, project_dir) {
@@ -365,10 +518,10 @@ pub fn restore_project(archived_project_dir: &Path) -> Result<Project> {
         &journal_path,
         &OperationJournal {
             id: journal_id.clone(),
-            operation: "restore",
+            operation: "restore".into(),
             source: archived_project_dir.to_path_buf(),
             destination: destination.clone(),
-            phase: "prepared",
+            phase: "prepared".into(),
         },
     )?;
 
@@ -381,10 +534,10 @@ pub fn restore_project(archived_project_dir: &Path) -> Result<Project> {
         &journal_path,
         &OperationJournal {
             id: journal_id,
-            operation: "restore",
+            operation: "restore".into(),
             source: archived_project_dir.to_path_buf(),
             destination: destination.clone(),
-            phase: "moved",
+            phase: "moved".into(),
         },
     ) {
         if let Err(rollback_error) = fs::rename(&destination, archived_project_dir) {
@@ -510,6 +663,75 @@ fn write_operation_journal(path: &Path, journal: &OperationJournal) -> Result<()
     atomic_write_json(path, journal)
 }
 
+fn invalid_journal_state(journal_path: &Path, detail: String) -> YtpmError {
+    YtpmError::InvalidProject(format!(
+        "operation journal {} 需要人工處理：{}",
+        journal_path.display(),
+        detail
+    ))
+}
+
+fn path_exists(path: &Path) -> Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(YtpmError::io(path, error)),
+    }
+}
+
+fn absolute_path_without_parent(path: &Path) -> Result<PathBuf> {
+    ensure_no_parent_components(path)?;
+    if path.is_absolute() {
+        Ok(path.to_path_buf())
+    } else {
+        let current_dir = std::env::current_dir().map_err(|error| YtpmError::io(".", error))?;
+        Ok(current_dir.join(path))
+    }
+}
+
+fn validate_journal_path(
+    library_root: &Path,
+    candidate: &Path,
+    label: &str,
+    journal_path: &Path,
+) -> Result<PathBuf> {
+    if candidate
+        .components()
+        .any(|component| matches!(component, Component::ParentDir | Component::CurDir))
+        || (!candidate.is_absolute()
+            && candidate
+                .components()
+                .any(|component| matches!(component, Component::Prefix(_) | Component::RootDir)))
+    {
+        return Err(invalid_journal_state(
+            journal_path,
+            format!(
+                "{label} 路徑不可包含 .、.. 或 drive prefix：{}",
+                candidate.display()
+            ),
+        ));
+    }
+    let candidate = absolute_path_without_parent(candidate).map_err(|error| {
+        invalid_journal_state(
+            journal_path,
+            format!("{label} 路徑無效：{}：{error}", candidate.display()),
+        )
+    })?;
+    if candidate == library_root || !candidate.starts_with(library_root) {
+        return Err(invalid_journal_state(
+            journal_path,
+            format!("{label} 必須位於 Library root 內：{}", candidate.display()),
+        ));
+    }
+    reject_reparse_points(&candidate).map_err(|error| {
+        invalid_journal_state(
+            journal_path,
+            format!("{label} 路徑含有 symlink/junction/reparse parent：{error}"),
+        )
+    })?;
+    Ok(candidate)
+}
+
 fn ensure_no_parent_components(path: &Path) -> Result<()> {
     if path
         .components()
@@ -526,13 +748,17 @@ fn ensure_no_parent_components(path: &Path) -> Result<()> {
 fn reject_reparse_points(path: &Path) -> Result<()> {
     let mut current = Some(path);
     while let Some(candidate) = current {
-        if let Ok(metadata) = fs::symlink_metadata(candidate) {
-            if metadata_is_reparse_point(&metadata) {
-                return Err(YtpmError::InvalidInput(format!(
-                    "拒絕操作 symlink/junction/reparse path：{}",
-                    candidate.display()
-                )));
+        match fs::symlink_metadata(candidate) {
+            Ok(metadata) => {
+                if metadata_is_reparse_point(&metadata) {
+                    return Err(YtpmError::InvalidInput(format!(
+                        "拒絕操作 symlink/junction/reparse path：{}",
+                        candidate.display()
+                    )));
+                }
             }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(YtpmError::io(candidate, error)),
         }
         current = candidate.parent();
     }

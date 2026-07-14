@@ -6,8 +6,8 @@
 
 - 完整產品需求與使用流程設計。
 - UI／UX 規格、頁面線框與設計 Token。
-- Rust 共用核心、CLI、Tauri 2＋React 桌面端骨架。
-- 可實際建立、列出、驗證影片專案的 MVP 程式碼。
+- Rust 共用核心、CLI、Tauri 2＋React 桌面端可使用 MVP。
+- 可實際建立、列出、驗證、索引影片專案，並管理 Task/Kanban、Asset Catalog 與文件編輯。
 - 可封存／還原專案，並保留封存前製作階段。
 - JSON Schema、SQLite migration、專案資料夾範本。
 - Codex／OpenCode 可直接遵循的 `AGENTS.md`、Gate、驗收與回滾規則。
@@ -28,7 +28,7 @@
 - Desktop：Tauri 2
 - Core／CLI：Rust
 - Frontend：React 19＋TypeScript＋Vite
-- Local index：SQLite（migration 已提供，MVP 核心先以 `project.json` 掃描）
+- Local index：SQLite（可刪除重建的 derived cache；`project.json` 仍是 source of truth）
 - Media：FFmpeg／FFprobe（第二階段接入）
 - Tests：Rust tests、Vitest、Playwright、PowerShell smoke tests
 
@@ -76,14 +76,18 @@ npm install
 npm run desktop:dev
 ```
 
-## MVP 已實作的骨架能力
+## MVP 已實作能力
 
 - 建立影片專案與標準資料夾。
 - 寫入 `project.json`、腳本／研究／發布資料範本。
 - 掃描專案根目錄並列出專案。
 - 驗證 `project.json` 與必要資料夾。
-- CLI：`create`、`list`、`validate`、`structure`、`archive`、`restore`、`migrate`。
-- Desktop：儀表板、專案卡片、新增專案視窗、專案工作區。
+- SQLite：`index rebuild/search`、FTS 查詢與外部變更反映。
+- Task/Kanban：`tasks.json` atomic CRUD、五欄狀態、順序與完成時間。
+- Asset Catalog：掃描、kind、size、SHA-256、missing 與安全路徑檢查。
+- 真正文件編輯器：腳本／發布文件讀寫、800ms autosave、失敗草稿恢復。
+- CLI：`create`、`list`、`validate`、`structure`、`archive`、`restore`、`migrate`、`index`、`task`、`asset`、`document`、`journal`。
+- Desktop：儀表板、專案卡片、新增專案視窗、專案工作區與編號化 Step/Next step 導引。
 - Desktop：folder picker 選擇 Library root，設定保存在本機 webview storage。
 
 ## 建議開發順序

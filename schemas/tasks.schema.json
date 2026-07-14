@@ -19,8 +19,14 @@
         "required": [
           "id",
           "title",
+          "description",
           "status",
           "priority",
+          "order_key",
+          "due_at",
+          "completed_at",
+          "related_asset_ids",
+          "acceptance_criteria",
           "created_at",
           "updated_at"
         ],
@@ -55,6 +61,10 @@
               "high",
               "urgent"
             ]
+          },
+          "order_key": {
+            "type": "number",
+            "minimum": 0
           },
           "due_at": {
             "type": [

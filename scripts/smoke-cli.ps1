@@ -1,9 +1,12 @@
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path $PSScriptRoot -Parent)
-$TempRoot = Join-Path $env:TEMP "ytpm-smoke-中文"
+$chinese = [string]::Concat([char]0x4E2D, [char]0x6587)
+$TempRoot = Join-Path $env:TEMP ("ytpm-smoke-" + $chinese)
 New-Item -ItemType Directory -Path $TempRoot -Force | Out-Null
 
-cargo run -p ytpm-cli -- create --root $TempRoot --title "測試：影片？" --channel "測試頻道"
+$title = [string]::Concat("Test", [char]0xFF1A, "Video", [char]0xFF1F)
+$channel = [string]::Concat("Test", [char]0x983B, [char]0x9053)
+cargo run -p ytpm-cli -- create --root $TempRoot --title $title --channel $channel
 cargo run -p ytpm-cli -- list --root $TempRoot --json
 $Project = Get-ChildItem $TempRoot -Directory | Select-Object -First 1
 cargo run -p ytpm-cli -- validate --path $Project.FullName --json

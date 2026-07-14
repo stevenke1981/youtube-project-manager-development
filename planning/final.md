@@ -2,7 +2,7 @@
 
 ## 目前交付
 
-此版本是 **v0.1 開發內容與可擴充骨架**，不是已完成的商用安裝程式。
+此版本是 **v0.1 可使用的離線桌面 MVP**；尚不是包含完整 NLE 時間軸、FFprobe、YouTube 自動上傳與簽章流程的商用完成版。
 
 已包含：
 
@@ -18,7 +18,13 @@
 - Desktop workflow 已可操作：Step 1/2/3 導引、搜尋／狀態篩選／排序、validation 面板、status 更新與確認後封存。
 - 缺少必要標準資料夾時 validation 會明確失敗；active list 不會混入 `_archive` 專案。
 - React 對 Tauri structured error 會顯示人類訊息與建議動作，不會顯示 `[object Object]`。
-- Schema、SQLite migration、範本、CI、PowerShell scripts。
+- SQLite project index／FTS search：位於 `.ytpm/index.sqlite3` 的可重建 derived cache，搜尋前會反映外部檔案變更，不作為 source of truth。
+- Task/Kanban：`tasks.json` 為真實來源，支援新增、編輯、移動、完成時間、nullable 欄位清除與 atomic write。
+- Asset Catalog：`assets.json` 為真實來源，支援掃描、kind、size、SHA-256、missing 保留、metadata ignore 與安全路徑檢查。
+- 真正文件編輯器：腳本與發布文件直接讀寫專案檔案，800ms autosave、Saved/Error 狀態、失敗草稿與重載恢復。
+- journal 自動恢復：啟動列舉前檢查 `.ytpm-operation.json`，可修補已搬移專案的 archive/restore metadata；歧義狀態保留 journal。
+- Windows junction 專用驗收：中文路徑、`mklink /J`、required directory validation smoke，所有核心寫入路徑 fail-closed。
+- Schema、SQLite migration、範本、CI、PowerShell scripts 與 CLI/Tauri contract。
 
 ## 驗證狀態
 
@@ -29,14 +35,15 @@
 - [x] `npm install`、`npm run typecheck`、`npm run test`、`npm run build`。
 - [x] CLI 中文 Windows path smoke：create/list/validate。
 - [x] `npm run desktop:build`：產生 MSI、NSIS 與 release executable。
-- [x] core 12 integration tests、React 6 tests、workspace clippy/test、中文／空白路徑 smoke。
+- [x] core 56 tests（含 index、Task、Asset、Document、journal、junction validation）、React 15 tests、workspace clippy/test、中文／空白路徑 smoke。
+- [x] `scripts/smoke-junction.ps1`：中文 Windows 路徑與 junction validation 回傳非零且包含 `REQUIRED_DIRECTORY_SYMLINK`。
 
 ## 下一個開發者第一步
 
-1. 完成 Windows junction 實機 smoke 與 operation journal 啟動恢復。
-2. 完成 M1 SQLite index/rebuild，再進入 Asset Catalog。
-3. 加入 Tauri/CLI contract tests、persistent error center 與真正的 Task/Asset/Editor workspace。
+1. 加入完整 Tauri invoke contract/e2e tests 與 persistent error center。
+2. 對 Asset Catalog 增加 incremental scan、FFprobe adapter、thumbnail/preview 與 import/relink。
+3. 加入 subtitle parser、metadata checklist、versions/history，以及真正的非破壞性 NLE timeline（仍遵守本版 boundary）。
 
 ## 回滾
 
-本次測試只使用 `%TEMP%` fixture，未修改使用者既有 Library。migration 會在專案內建立 `.ytpm-backup/`；archive/restore 會寫 operation journal，rollback 失敗時保留 journal 供人工恢復。尚未完成啟動時自動恢復 journal 與 junction 專用 Windows fixture。
+本次測試只使用 `%TEMP%` fixture，未修改使用者既有 Library。migration 會在專案內建立 `.ytpm-backup/`；archive/restore 會寫 operation journal，rollback 失敗時保留 journal 供人工恢復。SQLite index 可安全刪除後重建；`project.json`、`tasks.json`、`assets.json` 與實際文件仍是可攜式 source of truth。

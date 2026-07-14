@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { AppShell } from "./components/AppShell";
 import { CreateProjectDialog } from "./components/CreateProjectDialog";
 import { Dashboard } from "./components/Dashboard";
 import { ProjectWorkspace } from "./components/ProjectWorkspace";
 import { StepGuide } from "./components/StepGuide";
-import { createProject, getErrorMessage, listProjects } from "./lib/commands";
-import type { CreateProjectRequest, Project } from "./types";
+import { createProject, getErrorMessage, listProjects, projectIndexRebuild } from "./lib/commands";
+import type { CreateProjectRequest, IndexReport, Project } from "./types";
+
+type IndexStatus = "idle" | "indexing" | "ready" | "error";
 
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -17,23 +19,41 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [indexStatus, setIndexStatus] = useState<IndexStatus>("idle");
+  const [indexReport, setIndexReport] = useState<IndexReport | null>(null);
+  const [indexError, setIndexError] = useState<string | null>(null);
+  const indexRequestRef = useRef(0);
 
   const loadProjects = useCallback(async () => {
     if (!rootPath.trim()) {
       setProjects([]);
       setLoading(false);
+      setIndexStatus("idle");
+      setIndexReport(null);
       return;
     }
+    const requestId = indexRequestRef.current + 1;
+    indexRequestRef.current = requestId;
     setLoading(true);
     setError(null);
+    setIndexError(null);
+    setIndexStatus("indexing");
     try {
+      const report = await projectIndexRebuild(rootPath);
+      if (requestId !== indexRequestRef.current) return;
+      setIndexReport(report);
+      setIndexStatus("ready");
       const nextProjects = await listProjects(rootPath);
+      if (requestId !== indexRequestRef.current) return;
       setProjects(nextProjects);
       setSelected((current) => current ? nextProjects.find((project) => project.id === current.id) ?? null : null);
     } catch (reason) {
+      if (requestId !== indexRequestRef.current) return;
+      setIndexStatus("error");
+      setIndexError(getErrorMessage(reason));
       setError(getErrorMessage(reason));
     } finally {
-      setLoading(false);
+      if (requestId === indexRequestRef.current) setLoading(false);
     }
   }, [rootPath]);
 
@@ -44,7 +64,7 @@ export default function App() {
     try {
       const selectedRoot = isTauri()
         ? await open({ directory: true, multiple: false, title: "選擇影片 Library" })
-        : window.prompt("輸入影片 Library root 路徑", rootPath);
+        : rootPath.trim() || "demo-library";
       if (typeof selectedRoot !== "string" || !selectedRoot.trim()) return;
       localStorage.setItem("ytpm.libraryRoot", selectedRoot);
       setRootPath(selectedRoot.trim());
@@ -106,9 +126,9 @@ export default function App() {
       ) : loading && !selected ? (
         <section className="status-state" role="status"><span className="eyebrow">LOADING OFFLINE INDEX</span><h1>正在載入 Library</h1><p>正在讀取可攜式 project.json；資料仍留在你的資料夾。</p></section>
       ) : selected ? (
-        <ProjectWorkspace project={selected} projectPath={projectPath} onBack={() => setSelected(null)} onProjectUpdated={handleProjectUpdated} onArchived={() => { setSelected(null); void loadProjects(); }} />
+        <ProjectWorkspace rootPath={rootPath} project={selected} projectPath={projectPath} onBack={() => setSelected(null)} onProjectUpdated={handleProjectUpdated} onArchived={() => { setSelected(null); void loadProjects(); }} />
       ) : (
-        <Dashboard projects={projects} searchQuery={searchQuery} onSearchChange={setSearchQuery} onOpen={setSelected} onNewProject={handleNewProject} />
+        <Dashboard projects={projects} searchQuery={searchQuery} onSearchChange={setSearchQuery} onOpen={setSelected} onNewProject={handleNewProject} indexStatus={indexStatus} indexReport={indexReport} indexError={indexError} onRebuildIndex={() => void loadProjects()} />
       )}
       <CreateProjectDialog open={dialogOpen} rootPath={rootPath} busy={busy} error={error} onClose={() => setDialogOpen(false)} onSubmit={handleCreate} />
     </AppShell>

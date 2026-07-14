@@ -23,9 +23,9 @@
 - [x] 實作 archive／restore（含 operation journal、衝突不覆寫、symlink/junction 拒絕、封存前狀態恢復）。
 - [x] schema v1→v2 migration（`.ytpm-backup/` snapshot、`ytpm migrate`）。
 - [x] Library root 設定持久化（本機 webview storage）與 folder picker。
-- [ ] SQLite project index 與 rebuild。
+- [x] SQLite project index、FTS search 與 rebuild（SQLite 僅為可刪除的 derived cache）。
 - [x] Windows reserved names tests（sanitize unit coverage）。
-- [-] symlink／junction policy（archive/restore 拒絕 symlink；junction 需 Windows smoke test）。
+- [x] symlink／junction policy（archive/restore、asset、document 與 validation fail-closed；含 Windows junction smoke test）。
 
 ## M2 — Desktop UX
 
@@ -43,8 +43,8 @@
 
 ## M3 — Asset Catalog
 
-- [ ] Asset domain model。
-- [ ] file scanner 與 ignore rules。
+- [x] Asset domain model 與 portable `assets.json` catalog。
+- [x] file scanner、ignore rules、SHA-256 hash、missing record 與 atomic write。
 - [ ] FFprobe adapter。
 - [ ] thumbnail cache。
 - [ ] import／link／relink。
@@ -54,16 +54,16 @@
 ## M4 — Workflow
 
 - [x] Project status transition command/UI（status 更新以 project.json 為真實來源）。
-- [ ] Task CRUD。
-- [ ] Kanban transitions。
+- [x] Task CRUD（保留 JSON source of truth、支援 null 清除與 atomic write）。
+- [x] Kanban transitions。
 - [ ] progress calculation rules。
 - [ ] missing deliverables validator。
 - [ ] publishing checklist。
 
 ## M5 — Editors
 
-- [ ] Markdown script editor。
-- [ ] autosave draft and recovery。
+- [x] Markdown script／publish editor。
+- [x] 800ms autosave、failed-save draft 保留與重啟草稿恢復。
 - [ ] subtitle parser／overlap validation。
 - [ ] metadata editor／clipboard actions。
 - [ ] versions／history。
