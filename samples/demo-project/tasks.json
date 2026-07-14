@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "tasks": [
+    {
+      "id": "d6903906-c6bf-44e8-b3a4-2851c6202ba1",
+      "title": "完成旁白語音",
+      "description": "依場景輸出 WAV 並檢查發音",
+      "status": "doing",
+      "priority": "high",
+      "due_at": null,
+      "completed_at": null,
+      "related_asset_ids": [],
+      "acceptance_criteria": ["所有段落都有語音", "無明顯爆音", "檔名對應場景"],
+      "created_at": "2026-07-14T10:00:00Z",
+      "updated_at": "2026-07-14T10:00:00Z"
+    }
+  ]
+}

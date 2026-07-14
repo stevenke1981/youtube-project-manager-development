@@ -1,0 +1,17 @@
+{
+  "name": "youtube-project-manager-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/desktop"
+  ],
+  "scripts": {
+    "desktop:dev": "npm --workspace apps/desktop run tauri dev",
+    "desktop:build": "npm --workspace apps/desktop run tauri build",
+    "build": "npm run web:build",
+    "web:dev": "npm --workspace apps/desktop run dev",
+    "web:build": "npm --workspace apps/desktop run build",
+    "typecheck": "npm --workspace apps/desktop run typecheck",
+    "test": "npm --workspace apps/desktop run test"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "schema_version": 2,
+  "id": "8d83368a-208f-47ec-aa64-c2f923ca5f57",
+  "title": "大模型為什麼不適合做精確計算",
+  "folder_name": "2026-07-14_大模型為什麼不適合做精確計算",
+  "channel": "AI 技術分享",
+  "series": "AI 基礎",
+  "status": "voice",
+  "archived_from_status": null,
+  "aspect_ratio": "16:9",
+  "language": "zh-TW",
+  "target_duration_seconds": 480,
+  "planned_publish_at": "2026-07-20T12:00:00Z",
+  "published_at": null,
+  "progress": 45,
+  "tags": [
+    "AI",
+    "大型語言模型",
+    "科普"
+  ],
+  "created_at": "2026-07-14T10:00:00Z",
+  "updated_at": "2026-07-14T10:00:00Z",
+  "app_version": "0.1.0"
+}
