@@ -6,7 +6,7 @@
 
 - 完整產品需求與使用流程設計。
 - UI／UX 規格、頁面線框與設計 Token。
-- Rust 共用核心、CLI、Tauri 2＋React 桌面端可使用 MVP。
+- Rust 共用核心、CLI、Tauri 2＋React 桌面端可使用 v0.2 media workstation。
 - 可實際建立、列出、驗證、索引影片專案，並管理 Task/Kanban、Asset Catalog 與文件編輯。
 - 可封存／還原專案，並保留封存前製作階段。
 - JSON Schema、SQLite migration、專案資料夾範本。
@@ -20,7 +20,7 @@
 2. `project.json` 是專案真實來源；SQLite 只負責快速索引，可隨時重建。
 3. GUI 與 CLI 共用 `ytpm-core`，避免規則分裂。
 4. 預設不永久刪除素材；改移至 `10_archive/`。
-5. 第一版管理製作流程，不重做剪輯軟體。
+5. `timeline.json`、FFprobe／FFmpeg 與 YouTube 發布 adapter 都保留可攜式檔案 source of truth。
 6. 所有資料可由一般檔案總管、文字編輯器與第三方工具讀取。
 
 ## 技術組合
@@ -29,7 +29,7 @@
 - Core／CLI：Rust
 - Frontend：React 19＋TypeScript＋Vite
 - Local index：SQLite（可刪除重建的 derived cache；`project.json` 仍是 source of truth）
-- Media：FFmpeg／FFprobe（第二階段接入）
+- Media：FFmpeg／FFprobe（argv-only、非破壞式 trim/export）
 - Tests：Rust tests、Vitest、Playwright、PowerShell smoke tests
 
 ## 目錄
@@ -89,6 +89,9 @@ npm run desktop:dev
 - CLI：`create`、`list`、`validate`、`structure`、`archive`、`restore`、`migrate`、`index`、`task`、`asset`、`document`、`journal`。
 - Desktop：儀表板、專案卡片、新增專案視窗、專案工作區與編號化 Step/Next step 導引。
 - Desktop：folder picker 選擇 Library root，設定保存在本機 webview storage。
+- Desktop：影片工作台以 1–7 步驟完成素材選擇、timeline trim、FFprobe、FFmpeg、metadata dry-run 與 YouTube 確認上傳。
+- CLI：`timeline`、`media probe/export`、`publish config/dry-run/upload --confirm`。
+- Release：Tauri v0.2.0 MSI／NSIS、`scripts/release-checks.ps1`、`scripts/installer-smoke.ps1`。
 
 ## 建議開發順序
 

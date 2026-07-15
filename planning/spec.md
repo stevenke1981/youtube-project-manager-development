@@ -86,11 +86,38 @@ YouTube 製作者常將腳本、TTS、圖片、分鏡、影片、字幕、封面
 - NFR-006：UI 125%／150% 縮放仍可操作。
 - NFR-007：資料寫入可恢復、可追蹤、可重建。
 
-## 6. 暫不包含
+## 5.1 v0.2 媒體製作與發布擴充
 
-- 完整影片時間軸剪輯。
+### FR-009 Portable NLE timeline
+
+- 每個專案以 `timeline.json` 保存 tracks、clips、trim、音量、mute、transition 與輸出設定。
+- Timeline 只引用專案相對路徑與 asset id，不複製媒體到私有資料庫。
+- Clip 的 start/in/out/duration 必須是非負整數毫秒；非法 trim、重疊與不存在 asset 必須回傳可行動錯誤。
+- UI 支援新增、移動、trim、排序、移除 clip；移除 clip 不刪除素材。
+
+### FR-010 FFprobe／FFmpeg
+
+- 以參數陣列呼叫使用者設定的 `ffprobe.exe`／`ffmpeg.exe`，禁止 shell command string。
+- 顯示 format、duration、video/audio streams、解析度、fps、codec 與可理解的工具缺失錯誤。
+- 提供 preview/proxy/final export，工作可取消、顯示進度，暫存與輸出檔案不得覆寫既有成品。
+- FFmpeg 不可用時 App 仍可開啟與編輯專案，提供安裝路徑與修復指引。
+
+### FR-011 YouTube publishing
+
+- OAuth 使用 state + PKCE loopback callback；client id/secret 只來自本機設定或 OS credential reference。
+- 上傳前必須由使用者明確確認；預設 dry-run，支援 metadata、thumbnail、subtitle、privacy、schedule。
+- Upload job 支援進度、取消、可重試錯誤與不重試的授權／驗證錯誤；Token 不寫入 repo、Library 或 `project.json`。
+
+### FR-012 Windows installer
+
+- MSI/NSIS 安裝 App，不建立、搬移或刪除 Library。
+- Release check 驗證 executable、MSI、NSIS、checksum 與 clean-install；uninstall smoke 必須確認 Library fixture 保留。
+
+## 6. v0.1 暫不包含（v0.2 已納入實作範圍）
+
+- 完整影片時間軸剪輯（v0.2 timeline 以 non-destructive cut/trim/export 為範圍）。
 - 雲端協作與多人即時編輯。
-- 未確認的自動上傳／發布。
+- 未確認的自動上傳／發布（v0.2 僅允許 OAuth、明確確認後的 upload job）。
 - 將所有素材複製到 App 私有儲存。
 
 ## 7. 成功指標

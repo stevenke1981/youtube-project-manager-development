@@ -161,3 +161,150 @@ export interface Document {
 export interface DocumentWriteResult {
   saved_at: string;
 }
+
+export type TimelineTrackKind = "video" | "audio" | "subtitle" | "other";
+
+export interface TimelineTransition {
+  kind: string;
+  duration_ms: number;
+}
+
+export interface TimelineClip {
+  id: string;
+  asset_id: string;
+  relative_path: string;
+  label: string;
+  start_ms: number;
+  in_ms: number;
+  out_ms: number;
+  duration_ms: number;
+  volume: number;
+  muted: boolean;
+  transition: TimelineTransition | null;
+}
+
+export interface TimelineTrack {
+  id: string;
+  label: string;
+  kind: TimelineTrackKind;
+  clips: TimelineClip[];
+}
+
+export interface Timeline {
+  schema_version: 1;
+  duration_ms: number;
+  tracks: TimelineTrack[];
+  output: {
+    output_relative_path: string;
+    format: string;
+    width: number;
+    height: number;
+    frame_rate: number;
+  };
+  updated_at: string;
+}
+
+export type TimelineIssueSeverity = "error" | "warning";
+
+export interface TimelineValidationIssue {
+  code: string;
+  severity: TimelineIssueSeverity;
+  message: string;
+  clip_id: string | null;
+  track_id: string | null;
+  suggested_action: string;
+}
+
+export interface TimelineValidationReport {
+  valid: boolean;
+  duration_seconds: number;
+  issues: TimelineValidationIssue[];
+}
+
+export interface MediaMetadata {
+  asset_id: string | null;
+  relative_path: string;
+  format_name: string;
+  duration_seconds: number | null;
+  size_bytes: number | null;
+  bitrate_bps: number | null;
+  width: number | null;
+  height: number | null;
+  video_codec: string | null;
+  audio_codec: string | null;
+  frame_rate: string | null;
+  sample_rate: number | null;
+  channels: number | null;
+  probed_at: string;
+}
+
+export type MediaOperationKind = "probe" | "export";
+
+export interface MediaExportRequest {
+  source_asset_id: string | null;
+  output_relative_path: string;
+  format: "mp4" | "webm";
+  timeline: Timeline | null;
+}
+
+export interface MediaExportResult {
+  operation_id: string;
+  status: "completed" | "cancelled" | "failed";
+  progress: number;
+  output_relative_path: string | null;
+  message: string | null;
+}
+
+export type PublishVisibility = "private" | "unlisted" | "public";
+
+export interface PublishMetadata {
+  title: string;
+  description: string;
+  tags: string[];
+  visibility: PublishVisibility;
+  scheduled_at: string | null;
+  channel: string | null;
+}
+
+export interface PublishConfigReference {
+  provider: string;
+  config_path: string;
+  oauth_ready: boolean;
+  scopes: string[];
+  setup_url: string | null;
+}
+
+export interface PublishOAuthStart {
+  state: string;
+  code_verifier: string;
+  redirect_uri: string;
+  authorize_url: string;
+}
+
+export interface PublishOAuthCallbackResult {
+  refresh_token_issued: boolean;
+  access_token_received: boolean;
+  message: string;
+}
+
+export interface PublishCheck {
+  id: string;
+  label: string;
+  ok: boolean;
+  detail: string;
+}
+
+export interface PublishReadiness {
+  valid: boolean;
+  checks: PublishCheck[];
+}
+
+export interface PublishResult {
+  operation_id: string;
+  status: "completed" | "cancelled" | "failed";
+  progress: number;
+  dry_run: boolean;
+  uploaded: boolean;
+  video_url: string | null;
+  message: string;
+}

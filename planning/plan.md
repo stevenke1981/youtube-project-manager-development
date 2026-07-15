@@ -2,7 +2,7 @@
 
 ## 目標
 
-在 Windows 10／11 先完成可離線獨立運行的桌面 App，讓使用者以「一支影片一個專案資料夾」管理完整 YouTube 製作流程。之後再延伸 Linux、macOS、AI Adapter、FFmpeg 與 YouTube API。
+在 Windows 10／11 完成可離線獨立運行的桌面 App，讓使用者以「一支影片一個專案資料夾」管理 YouTube 製作流程、non-destructive timeline 與明確確認的發布工作。外部媒體工具與 YouTube 僅透過 adapter 接入，不破壞離線核心。
 
 ## 分期
 
@@ -56,6 +56,14 @@
 - YouTube OAuth、草稿上傳、metadata、縮圖、字幕。
 - 發布日曆與成效快照。
 - 驗收：Token 使用 OS credential store；上傳前有最終確認。
+
+### Phase 8 — v0.2 Media Workstation
+
+- Portable timeline editor：track/clip/trim/reorder/remove、timeline validation 與 render manifest。
+- FFprobe metadata、FFmpeg preview/proxy/final export、progress/cancel、工具缺失指引。
+- YouTube OAuth loopback + PKCE、dry-run、explicit confirmation upload、retry/cancel/status。
+- Windows MSI/NSIS installer smoke、checksum、uninstall preserves Library。
+- 驗收：所有外部命令使用 argv；OAuth secret 不進 repo/Library；可在無 FFmpeg/YouTube 網路時繼續編輯與驗證。
 
 ## 每期工作節奏
 

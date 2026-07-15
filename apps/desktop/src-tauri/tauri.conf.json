@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "YouTube Project Manager",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.ytpm.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -26,11 +26,37 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "msi",
+      "nsis"
+    ],
     "icon": [
       "icons/icon.ico"
     ],
+    "publisher": "YouTube Project Manager",
+    "copyright": "Copyright © 2026 YTPM contributors",
+    "license": "MIT",
     "shortDescription": "Offline-first YouTube production project manager",
-    "category": "Productivity"
+    "longDescription": "A portable, offline-first workspace for research, scripts, media, subtitles, thumbnails, publishing metadata, and tasks.",
+    "category": "Productivity",
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "wix": {
+        "version": "0.2.0.0",
+        "upgradeCode": "e3ccfc92-537a-5bc9-aac7-4c06d6dd5be3",
+        "language": "en-US"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "English"
+        ],
+        "displayLanguageSelector": false,
+        "startMenuFolder": "YouTube Project Manager"
+      }
+    }
   }
 }

@@ -85,6 +85,18 @@ enum Command {
         #[command(subcommand)]
         command: JournalCommand,
     },
+    Timeline {
+        #[command(subcommand)]
+        command: TimelineCommand,
+    },
+    Media {
+        #[command(subcommand)]
+        command: MediaCommand,
+    },
+    Publish {
+        #[command(subcommand)]
+        command: PublishCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -214,6 +226,66 @@ enum JournalCommand {
     Recover {
         #[arg(long)]
         root: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum TimelineCommand {
+    Load {
+        #[arg(long)]
+        path: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    Validate {
+        #[arg(long)]
+        path: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum MediaCommand {
+    Probe {
+        #[arg(long)]
+        path: PathBuf,
+        #[arg(long)]
+        relative_path: String,
+        #[arg(long)]
+        json: bool,
+    },
+    Export {
+        #[arg(long)]
+        path: PathBuf,
+        #[arg(long)]
+        output: String,
+        #[arg(long)]
+        confirm: bool,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum PublishCommand {
+    Config {
+        #[arg(long)]
+        json: bool,
+    },
+    DryRun {
+        #[arg(long)]
+        path: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    Upload {
+        #[arg(long)]
+        path: PathBuf,
+        #[arg(long)]
+        confirm: bool,
         #[arg(long)]
         json: bool,
     },
@@ -477,6 +549,113 @@ fn run() -> Result<()> {
                     println!("{}", serde_json::to_string_pretty(&report)?);
                 } else {
                     print_recovery_report(&report, &root);
+                }
+            }
+        },
+        Command::Timeline { command } => match command {
+            TimelineCommand::Load { path, json } => {
+                let timeline = ytpm_core::read_timeline(&path)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&timeline)?);
+                } else {
+                    println!(
+                        "timeline：{} ms · tracks：{} · updated：{}",
+                        timeline.duration_ms,
+                        timeline.tracks.len(),
+                        timeline.updated_at
+                    );
+                }
+            }
+            TimelineCommand::Validate { path, json } => {
+                let timeline = ytpm_core::read_timeline(&path)?;
+                let report = ytpm_core::validate_timeline(&timeline);
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                } else {
+                    println!(
+                        "timeline valid：{} · issues：{}",
+                        report.valid,
+                        report.issues.len()
+                    );
+                }
+                if !report.valid {
+                    std::process::exit(12);
+                }
+            }
+        },
+        Command::Media { command } => match command {
+            MediaCommand::Probe {
+                path,
+                relative_path,
+                json,
+            } => {
+                let probe = ytpm_core::probe_media(&path, &relative_path)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&probe)?);
+                } else {
+                    println!(
+                        "{} · {:?} · {:?}s",
+                        probe.relative_path, probe.format_name, probe.duration_seconds
+                    );
+                }
+            }
+            MediaCommand::Export {
+                path,
+                output,
+                confirm,
+                json,
+            } => {
+                if !confirm {
+                    anyhow::bail!("media export 需要 --confirm；先確認輸出路徑與 timeline");
+                }
+                let timeline = ytpm_core::read_timeline(&path)?;
+                let result = ytpm_core::export_timeline(&path, &timeline, &output, None)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!(
+                        "FFmpeg export：{:?} · {}",
+                        result.status,
+                        result.message.unwrap_or_default()
+                    );
+                }
+            }
+        },
+        Command::Publish { command } => match command {
+            PublishCommand::Config { json } => {
+                let config = ytpm_core::config_reference();
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&config)?);
+                } else {
+                    println!(
+                        "provider：{} · oauth_ready：{} · config：{}",
+                        config.provider, config.oauth_ready, config.config_path
+                    );
+                }
+            }
+            PublishCommand::DryRun { path, json } => {
+                let metadata = ytpm_core::load_publish_metadata(&path)?;
+                let result = ytpm_core::publish_dry_run(&path, &metadata)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("publish dry-run：{:?} · {}", result.status, result.message);
+                }
+            }
+            PublishCommand::Upload {
+                path,
+                confirm,
+                json,
+            } => {
+                if !confirm {
+                    anyhow::bail!("publish upload 需要 --confirm；先執行 publish dry-run");
+                }
+                let metadata = ytpm_core::load_publish_metadata(&path)?;
+                let result = ytpm_core::upload_video(&path, &metadata, None)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("publish upload：{:?} · {}", result.status, result.message);
                 }
             }
         },

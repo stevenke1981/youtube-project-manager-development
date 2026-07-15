@@ -5,6 +5,15 @@ import type {
   CreateProjectRequest,
   DocumentWriteResult,
   IndexReport,
+  MediaExportRequest,
+  MediaExportResult,
+  MediaMetadata,
+  PublishConfigReference,
+  PublishMetadata,
+  PublishOAuthCallbackResult,
+  PublishOAuthStart,
+  PublishReadiness,
+  PublishResult,
   Project,
   ProjectStatus,
   RecoveryReport,
@@ -12,6 +21,7 @@ import type {
   TaskCreateRequest,
   TaskStatus,
   TaskUpdatePatch,
+  Timeline,
   ValidationReport
 } from "../types";
 
@@ -85,6 +95,8 @@ let demoProjects: Project[] = [
 const demoTasks = new Map<string, Task[]>();
 const demoAssets = new Map<string, Asset[]>();
 const demoDocuments = new Map<string, string>();
+const demoTimelines = new Map<string, Timeline>();
+const demoPublishMetadata = new Map<string, PublishMetadata>();
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -102,6 +114,24 @@ function pathKey(value: string): string {
 
 function cloneTask(task: Task): Task {
   return { ...task, related_asset_ids: [...task.related_asset_ids], acceptance_criteria: [...task.acceptance_criteria] };
+}
+
+function cloneTimeline(timeline: Timeline): Timeline {
+  return {
+    ...timeline,
+    tracks: timeline.tracks.map((track) => ({
+      ...track,
+      clips: track.clips.map((clip) => ({ ...clip }))
+    }))
+  };
+}
+
+function clonePublishMetadata(metadata: PublishMetadata): PublishMetadata {
+  return { ...metadata, tags: [...metadata.tags] };
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
 function getDemoTasks(projectPath: string): Task[] {
@@ -193,6 +223,48 @@ function getDemoAssets(projectPath: string): Asset[] {
       version_group_id: null,
       version_number: 1,
       is_adopted: false,
+      created_at: createdAt,
+      updated_at: createdAt
+    },
+    {
+      id: makeId(),
+      kind: "video",
+      relative_path: "05_video/rough-cut.mp4",
+      display_name: "rough-cut.mp4",
+      state: "available",
+      source_type: "created",
+      generator: null,
+      model: null,
+      prompt: null,
+      sha256: null,
+      size_bytes: 48_000_000,
+      duration_ms: 420_000,
+      width: 1920,
+      height: 1080,
+      version_group_id: null,
+      version_number: 1,
+      is_adopted: true,
+      created_at: createdAt,
+      updated_at: createdAt
+    },
+    {
+      id: makeId(),
+      kind: "voice",
+      relative_path: "03_voice/narration.wav",
+      display_name: "narration.wav",
+      state: "available",
+      source_type: "created",
+      generator: null,
+      model: null,
+      prompt: null,
+      sha256: null,
+      size_bytes: 12_000_000,
+      duration_ms: 420_000,
+      width: null,
+      height: null,
+      version_group_id: null,
+      version_number: 1,
+      is_adopted: true,
       created_at: createdAt,
       updated_at: createdAt
     }
@@ -438,4 +510,242 @@ export async function projectRecoverJournal(rootPath: string): Promise<RecoveryR
     };
   }
   return invoke<RecoveryReport>("project_recover_journal", { rootPath });
+}
+
+export function isTauriRuntime(): boolean {
+  return isTauri();
+}
+
+function createDemoTimeline(projectPath: string): Timeline {
+  const assets = getDemoAssets(projectPath);
+  const video = assets.find((asset) => asset.kind === "video") ?? assets[0];
+  const voice = assets.find((asset) => asset.kind === "voice") ?? assets[0];
+  const now = nowIso();
+  const clip = (asset: Asset | undefined, label: string, start_ms: number, in_ms: number, out_ms: number) => ({
+    id: makeId(),
+    asset_id: asset?.id ?? makeId(),
+    relative_path: asset?.relative_path ?? "05_video/rough-cut.mp4",
+    label,
+    start_ms,
+    in_ms,
+    out_ms,
+    duration_ms: out_ms - in_ms,
+    volume: 1,
+    muted: false,
+    transition: null
+  });
+  return {
+    schema_version: 1,
+    duration_ms: 420_000,
+    updated_at: now,
+    tracks: [
+      {
+        id: "00000000-0000-0000-0000-000000000001",
+        label: "V1 · 主畫面",
+        kind: "video",
+        clips: [
+          clip(video, "開場與主畫面", 0, 0, 120_000),
+          clip(video, "重點示範", 130_000, 120_000, 290_000)
+        ]
+      },
+      {
+        id: "00000000-0000-0000-0000-000000000002",
+        label: "A1 · 旁白",
+        kind: "audio",
+        clips: [clip(voice, "旁白主軌", 0, 0, 300_000)]
+      },
+      {
+        id: "00000000-0000-0000-0000-000000000003",
+        label: "S1 · 字幕",
+        kind: "subtitle",
+        clips: []
+      }
+    ],
+    output: {
+      output_relative_path: "09_exports/timeline.mp4",
+      format: "mp4",
+      width: 1920,
+      height: 1080,
+      frame_rate: 30
+    }
+  };
+}
+
+export async function timelineLoad(projectPath: string): Promise<Timeline> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法載入 timeline");
+  if (!isTauri()) {
+    const key = pathKey(projectPath);
+    const existing = demoTimelines.get(key);
+    if (existing) return cloneTimeline(existing);
+    const created = createDemoTimeline(projectPath);
+    demoTimelines.set(key, created);
+    return cloneTimeline(created);
+  }
+  return invoke<Timeline>("timeline_load", { projectPath });
+}
+
+export async function timelineSave(projectPath: string, timeline: Timeline): Promise<Timeline> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法儲存 timeline");
+  if (!isTauri()) {
+    const saved = { ...cloneTimeline(timeline), updated_at: nowIso() };
+    demoTimelines.set(pathKey(projectPath), saved);
+    return cloneTimeline(saved);
+  }
+  return invoke<Timeline>("timeline_save", { projectPath, timeline });
+}
+
+export async function mediaProbe(
+  projectPath: string,
+  assetId: string | null,
+  relativePath: string
+): Promise<MediaMetadata> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法 probe 素材");
+  if (!relativePath.trim()) throw new Error("請先選擇要 probe 的素材");
+  if (!isTauri()) {
+    const asset = getDemoAssets(projectPath).find((item) => item.id === assetId || item.relative_path === relativePath);
+    await delay(350);
+    return {
+      asset_id: asset?.id ?? assetId,
+      relative_path: relativePath,
+      format_name: getExtension(relativePath) === "wav" ? "wav" : "mov,mp4,m4a,3gp,3g2,mj2",
+      duration_seconds: asset?.duration_ms ? asset.duration_ms / 1000 : 420,
+      size_bytes: asset?.size_bytes ?? null,
+      bitrate_bps: 2_400_000,
+      width: asset?.width ?? (asset?.kind === "voice" ? null : 1920),
+      height: asset?.height ?? (asset?.kind === "voice" ? null : 1080),
+      video_codec: asset?.kind === "voice" ? null : "h264",
+      audio_codec: asset?.kind === "voice" ? "pcm_s16le" : "aac",
+      frame_rate: asset?.kind === "voice" ? null : "30/1",
+      sample_rate: asset?.kind === "voice" ? 48000 : 48000,
+      channels: asset?.kind === "voice" ? 2 : 2,
+      probed_at: nowIso()
+    };
+  }
+  return invoke<MediaMetadata>("media_probe", { projectPath, assetId, relativePath });
+}
+
+export async function mediaExport(projectPath: string, request: MediaExportRequest, confirm = false): Promise<MediaExportResult> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法匯出媒體");
+  if (!request.output_relative_path.trim()) throw new Error("輸出路徑不可為空");
+  if (!isTauri()) {
+    await delay(650);
+    return {
+      operation_id: makeId(),
+      status: "completed",
+      progress: 100,
+      output_relative_path: request.output_relative_path,
+      message: "Web demo 已完成本地匯出流程預覽，未執行 FFmpeg。"
+    };
+  }
+  return invoke<MediaExportResult>("media_export", { projectPath, request, confirm });
+}
+
+export async function mediaOperationCancel(
+  projectPath: string,
+  operationId: string,
+  kind: "probe" | "export"
+): Promise<void> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法取消媒體操作");
+  if (!isTauri()) return;
+  await invoke<void>("media_operation_cancel", { projectPath, operationId, kind });
+}
+
+function getExtension(relativePath: string): string {
+  return relativePath.split(/[\\.]/).pop()?.toLocaleLowerCase() ?? "";
+}
+
+export async function publishConfigReference(projectPath: string): Promise<PublishConfigReference> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法讀取 OAuth 設定參照");
+  if (!isTauri()) {
+    return {
+      provider: "YouTube Data API v3",
+      config_path: ".ytpm/publish/oauth.json",
+      oauth_ready: false,
+      scopes: ["youtube.upload", "youtube.readonly"],
+      setup_url: "https://console.cloud.google.com/apis/credentials"
+    };
+  }
+  return invoke<PublishConfigReference>("publish_config_reference", { projectPath });
+}
+
+export async function publishAuthStart(): Promise<PublishOAuthStart> {
+  if (!isTauri()) throw new Error("OAuth loopback 需要在 Tauri desktop host 執行");
+  return invoke<PublishOAuthStart>("publish_auth_start");
+}
+
+export async function publishAuthCallback(callbackUrl: string, expectedState: string, codeVerifier: string): Promise<PublishOAuthCallbackResult> {
+  if (!isTauri()) throw new Error("OAuth callback 需要在 Tauri desktop host 執行");
+  return invoke<PublishOAuthCallbackResult>("publish_auth_callback", { request: { callbackUrl, expectedState, codeVerifier } });
+}
+
+export async function publishMetadataLoad(projectPath: string, project: Project): Promise<PublishMetadata> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法讀取發布 metadata");
+  if (!isTauri()) {
+    const key = pathKey(projectPath);
+    const existing = demoPublishMetadata.get(key);
+    if (existing) return clonePublishMetadata(existing);
+    const description = await documentRead(projectPath, "08_metadata/description.md");
+    const created: PublishMetadata = {
+      title: project.title,
+      description,
+      tags: [...project.tags],
+      visibility: "private",
+      scheduled_at: project.planned_publish_at,
+      channel: project.channel
+    };
+    demoPublishMetadata.set(key, created);
+    return clonePublishMetadata(created);
+  }
+  return invoke<PublishMetadata>("publish_metadata_load", { projectPath });
+}
+
+export async function publishMetadataSave(projectPath: string, metadata: PublishMetadata): Promise<PublishMetadata> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法儲存發布 metadata");
+  if (!metadata.title.trim()) throw new Error("發布標題不可為空");
+  if (!isTauri()) {
+    const saved = clonePublishMetadata(metadata);
+    demoPublishMetadata.set(pathKey(projectPath), saved);
+    await documentWrite(projectPath, "08_metadata/description.md", metadata.description);
+    return clonePublishMetadata(saved);
+  }
+  return invoke<PublishMetadata>("publish_metadata_save", { projectPath, metadata });
+}
+
+export async function publishDryRun(projectPath: string, metadata: PublishMetadata): Promise<PublishResult> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法執行發布 dry-run");
+  if (!isTauri()) {
+    await delay(450);
+    return {
+      operation_id: makeId(),
+      status: "completed",
+      progress: 100,
+      dry_run: true,
+      uploaded: false,
+      video_url: null,
+      message: `Dry-run 完成：已檢查「${metadata.title || "未命名影片"}」，未連線、未上傳。`
+    };
+  }
+  return invoke<PublishResult>("publish_dry_run", { projectPath, metadata });
+}
+
+export async function publishUpload(projectPath: string, metadata: PublishMetadata, confirm = false): Promise<PublishResult> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法發布影片");
+  if (!isTauri()) {
+    return {
+      operation_id: makeId(),
+      status: "failed",
+      progress: 0,
+      dry_run: false,
+      uploaded: false,
+      video_url: null,
+      message: "Web demo fallback 不會真的上傳影片；請在 Tauri host 完成 OAuth 與 publish_upload command。"
+    };
+  }
+  return invoke<PublishResult>("publish_upload", { projectPath, metadata, confirm });
+}
+
+export async function publishCancel(projectPath: string, operationId: string): Promise<void> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法取消發布");
+  if (!isTauri()) return;
+  await invoke<void>("publish_cancel", { projectPath, operationId });
 }

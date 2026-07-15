@@ -83,8 +83,8 @@ npm run build
 
 ## 6. Boundary
 
-- 第一版不內建完整 NLE 時間軸剪輯器。
-- 第一版不自動上傳 YouTube。
+- v0.1 基線不內建完整 NLE；v0.2 可加入 non-destructive timeline，但必須以 portable `timeline.json` 為來源，且不刪除素材。
+- v0.1 基線不自動上傳 YouTube；v0.2 可加入 OAuth upload adapter，但必須 explicit confirmation、dry-run、可取消／重試，Token 不得落入 repo 或 Library。
 - 第一版不自動連接付費 AI API。
 - AI 功能必須以 Adapter 加入，不得耦合核心資料模型。
 - FFmpeg 呼叫需使用參數陣列，不得拼接 shell command string。

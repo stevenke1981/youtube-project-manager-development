@@ -22,7 +22,20 @@ pub fn run() {
             commands::asset_list,
             commands::document_read,
             commands::document_write,
-            commands::project_recover_journal
+            commands::project_recover_journal,
+            commands::timeline_load,
+            commands::timeline_save,
+            commands::media_probe,
+            commands::media_export,
+            commands::media_operation_cancel,
+            commands::publish_config_reference,
+            commands::publish_auth_start,
+            commands::publish_auth_callback,
+            commands::publish_metadata_load,
+            commands::publish_metadata_save,
+            commands::publish_dry_run,
+            commands::publish_upload,
+            commands::publish_cancel
         ])
         .run(tauri::generate_context!())
         .expect("error while running YouTube Project Manager");

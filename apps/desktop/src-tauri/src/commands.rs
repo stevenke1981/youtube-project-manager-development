@@ -1,9 +1,11 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use ytpm_core::{
-    Asset, AssetCatalog, AssetState, CreateProjectRequest, Project, ProjectStatus, RecoveryReport,
-    Task, TaskPatch, TaskRequest, TaskStatus, ValidationReport, YtpmError,
+    Asset, AssetCatalog, AssetState, CreateProjectRequest, MediaProbe, OAuthCallbackResult,
+    OAuthStart, Project, ProjectStatus, PublishConfigReference, PublishMetadata, PublishResult,
+    RecoveryReport, Task, TaskPatch, TaskRequest, TaskStatus, Timeline, ValidationReport,
+    YtpmError,
 };
 
 #[derive(Debug, Serialize)]
@@ -96,6 +98,201 @@ pub struct RecoveryReportDto {
     pub journal_path: Option<String>,
     pub message: Option<String>,
     pub actions: Vec<String>,
+}
+
+fn require_confirmation(operation: &str, confirm: bool) -> Result<(), CommandError> {
+    if confirm {
+        Ok(())
+    } else {
+        Err(CommandError {
+            code: "CONFIRMATION_REQUIRED",
+            human_message: format!("{operation} 需要明確確認才能執行。"),
+            technical_detail: Some("The command requires confirm=true.".to_string()),
+            recoverable: true,
+            suggested_action: Some("確認輸出或發布內容後，以 confirm=true 重試"),
+        })
+    }
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn timeline_load(project_path: String) -> Result<Timeline, CommandError> {
+    ytpm_core::read_timeline(Path::new(&project_path)).map_err(CommandError::from)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn timeline_save(
+    project_path: String,
+    timeline: Timeline,
+) -> Result<Timeline, CommandError> {
+    ytpm_core::write_timeline(Path::new(&project_path), &timeline).map_err(CommandError::from)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MediaExportRequestDto {
+    pub source_asset_id: Option<String>,
+    pub output_relative_path: String,
+    pub format: String,
+    pub timeline: Timeline,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MediaMetadataDto {
+    pub asset_id: Option<String>,
+    pub relative_path: String,
+    pub format_name: String,
+    pub duration_seconds: Option<f64>,
+    pub size_bytes: Option<u64>,
+    pub bitrate_bps: Option<u64>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub video_codec: Option<String>,
+    pub audio_codec: Option<String>,
+    pub frame_rate: Option<String>,
+    pub sample_rate: Option<u32>,
+    pub channels: Option<u32>,
+    pub probed_at: String,
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn media_probe(
+    project_path: String,
+    asset_id: Option<String>,
+    relative_path: String,
+) -> Result<MediaMetadataDto, CommandError> {
+    let probe = ytpm_core::probe_media(Path::new(&project_path), &relative_path)
+        .map_err(CommandError::from)?;
+    Ok(media_metadata_dto(asset_id, probe))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn media_export(
+    project_path: String,
+    request: MediaExportRequestDto,
+    confirm: bool,
+) -> Result<ytpm_core::MediaExportResult, CommandError> {
+    require_confirmation("media.export", confirm)?;
+    let _ = request.source_asset_id;
+    let _ = request.format;
+    ytpm_core::export_timeline(
+        Path::new(&project_path),
+        &request.timeline,
+        &request.output_relative_path,
+        None,
+    )
+    .map_err(CommandError::from)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn media_operation_cancel(
+    project_path: String,
+    operation_id: String,
+    kind: String,
+) -> Result<(), CommandError> {
+    let _ = kind;
+    ytpm_core::cancel_marker(Path::new(&project_path), &operation_id)
+        .map(|_| ())
+        .map_err(CommandError::from)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn publish_config_reference(
+    _project_path: String,
+) -> Result<PublishConfigReference, CommandError> {
+    Ok(ytpm_core::config_reference())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublishOAuthCallbackRequest {
+    pub callback_url: String,
+    pub expected_state: String,
+    pub code_verifier: String,
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn publish_auth_start() -> Result<OAuthStart, CommandError> {
+    ytpm_core::start_oauth().map_err(CommandError::from)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn publish_auth_callback(
+    request: PublishOAuthCallbackRequest,
+) -> Result<OAuthCallbackResult, CommandError> {
+    ytpm_core::complete_oauth(
+        &request.callback_url,
+        &request.expected_state,
+        &request.code_verifier,
+    )
+    .map_err(CommandError::from)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn publish_metadata_load(project_path: String) -> Result<PublishMetadata, CommandError> {
+    ytpm_core::load_publish_metadata(Path::new(&project_path)).map_err(CommandError::from)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn publish_metadata_save(
+    project_path: String,
+    metadata: PublishMetadata,
+) -> Result<PublishMetadata, CommandError> {
+    ytpm_core::save_publish_metadata(Path::new(&project_path), &metadata)
+        .map_err(CommandError::from)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn publish_dry_run(
+    project_path: String,
+    metadata: PublishMetadata,
+) -> Result<PublishResult, CommandError> {
+    ytpm_core::publish_dry_run(Path::new(&project_path), &metadata).map_err(CommandError::from)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn publish_upload(
+    project_path: String,
+    metadata: PublishMetadata,
+    confirm: bool,
+) -> Result<PublishResult, CommandError> {
+    require_confirmation("publish.upload", confirm)?;
+    ytpm_core::upload_video(Path::new(&project_path), &metadata, None).map_err(CommandError::from)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn publish_cancel(
+    project_path: String,
+    operation_id: String,
+) -> Result<(), CommandError> {
+    ytpm_core::cancel_marker(Path::new(&project_path), &operation_id)
+        .map(|_| ())
+        .map_err(CommandError::from)
+}
+
+fn media_metadata_dto(asset_id: Option<String>, probe: MediaProbe) -> MediaMetadataDto {
+    let video = probe
+        .streams
+        .iter()
+        .find(|stream| stream.codec_type.as_deref() == Some("video"));
+    let audio = probe
+        .streams
+        .iter()
+        .find(|stream| stream.codec_type.as_deref() == Some("audio"));
+    MediaMetadataDto {
+        asset_id,
+        relative_path: probe.relative_path,
+        format_name: probe.format_name.unwrap_or_default(),
+        duration_seconds: probe.duration_seconds,
+        size_bytes: probe.size_bytes,
+        bitrate_bps: probe.bitrate_bps,
+        width: video.and_then(|stream| stream.width),
+        height: video.and_then(|stream| stream.height),
+        video_codec: video.and_then(|stream| stream.codec_name.clone()),
+        audio_codec: audio.and_then(|stream| stream.codec_name.clone()),
+        frame_rate: video.and_then(|stream| stream.r_frame_rate.clone()),
+        sample_rate: audio.and_then(|stream| stream.sample_rate),
+        channels: audio.and_then(|stream| stream.channels),
+        probed_at: probe.probed_at,
+    }
 }
 
 #[tauri::command(rename_all = "camelCase")]

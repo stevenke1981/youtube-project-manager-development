@@ -15,6 +15,7 @@ const INDEX_FILE: &str = "index.sqlite3";
 const MIGRATION_0001: &str = include_str!("../../../migrations/0001_init.sql");
 const MIGRATION_0002: &str = include_str!("../../../migrations/0002_search.sql");
 const MIGRATION_0003: &str = include_str!("../../../migrations/0003_runtime_index.sql");
+const MIGRATION_0004: &str = include_str!("../../../migrations/0004_timeline.sql");
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexReport {
@@ -346,6 +347,7 @@ fn apply_migrations(connection: &mut Connection, db_path: &Path) -> Result<()> {
         (1_i64, MIGRATION_0001),
         (2, MIGRATION_0002),
         (3, MIGRATION_0003),
+        (4, MIGRATION_0004),
     ] {
         let applied: bool = connection
             .query_row(

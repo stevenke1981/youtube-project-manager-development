@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ytpm.local/schemas/timeline.schema.json",
+  "title": "YouTube Project Manager timeline",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "duration_ms", "tracks", "output", "updated_at"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "output": { "$ref": "#/$defs/output" },
+    "tracks": { "type": "array", "items": { "$ref": "#/$defs/track" } }
+  },
+  "$defs": {
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["output_relative_path", "format", "width", "height", "frame_rate"],
+      "properties": {
+        "output_relative_path": { "type": "string", "minLength": 1 },
+        "format": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "frame_rate": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "track": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "kind", "clips"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "label": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["video", "audio", "subtitle", "other"] },
+        "clips": { "type": "array", "items": { "$ref": "#/$defs/clip" } }
+      }
+    },
+    "clip": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "asset_id", "relative_path", "label", "start_ms", "in_ms", "out_ms", "duration_ms", "volume", "muted", "transition"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "asset_id": { "type": "string", "format": "uuid" },
+        "relative_path": { "type": "string", "pattern": "^(?![A-Za-z]:)(?!/)(?!\\\\)(?!.*(^|[/\\\\])\\.\\.([/\\\\]|$)).+$" },
+        "label": { "type": "string", "minLength": 1 },
+        "start_ms": { "type": "integer", "minimum": 0 },
+        "in_ms": { "type": "integer", "minimum": 0 },
+        "out_ms": { "type": "integer", "exclusiveMinimum": 0 },
+        "duration_ms": { "type": "integer", "exclusiveMinimum": 0 },
+        "volume": { "type": "number", "minimum": 0 },
+        "muted": { "type": "boolean" },
+        "transition": { "anyOf": [{ "$ref": "#/$defs/transition" }, { "type": "null" }] }
+      }
+    },
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "duration_ms"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1 },
+        "duration_ms": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

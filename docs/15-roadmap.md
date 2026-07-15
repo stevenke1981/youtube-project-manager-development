@@ -28,6 +28,14 @@ Whisper.cpp、Qwen3-TTS／VoxCPM adapters、job queue。
 
 YouTube OAuth、upload draft、thumbnail、subtitle、schedule。
 
+## v0.8 Media Workstation
+
+Portable non-destructive NLE timeline、FFprobe inspector、FFmpeg preview/proxy/final export、progress/cancel 與可重建 render manifest。
+
+## v0.9 Safe Publishing
+
+YouTube OAuth loopback + PKCE、metadata/thumbnail/subtitle upload、dry-run、explicit confirmation、retry/cancel 與 credential reference。
+
 ## v1.0 Stable
 
-Migration guarantee、signed installers、backup／recovery、performance target、完整使用手冊。
+Migration guarantee、signed installers、checksum/release smoke、backup／recovery、performance target、完整使用手冊。

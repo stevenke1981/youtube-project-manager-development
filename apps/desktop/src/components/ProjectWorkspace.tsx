@@ -4,6 +4,7 @@ import { archiveProject, getErrorMessage, projectRecoverJournal, updateProjectSt
 import type { AssetKind, Project, ProjectStatus, RecoveryReport, ValidationReport } from "../types";
 import { AssetCatalogPanel } from "./AssetCatalogPanel";
 import { DocumentEditor } from "./DocumentEditor";
+import { MediaWorkspace } from "./MediaWorkspace";
 import { StepGuide } from "./StepGuide";
 import { TaskBoard } from "./TaskBoard";
 
@@ -230,8 +231,10 @@ export function ProjectWorkspace({ project, rootPath, projectPath, onBack, onPro
           <TaskBoard projectPath={projectPath} />
         ) : activeTab === "腳本" ? (
           <DocumentEditor projectPath={projectPath} documentType="script" />
+        ) : activeTab === "影片" ? (
+          <MediaWorkspace projectPath={projectPath} project={project} />
         ) : activeTab === "發布" ? (
-          <DocumentEditor projectPath={projectPath} documentType="publish" />
+          <MediaWorkspace projectPath={projectPath} project={project} />
         ) : assetKindByTab[activeTab] ? (
           <AssetCatalogPanel projectPath={projectPath} kindFilter={assetKindByTab[activeTab]} />
         ) : (

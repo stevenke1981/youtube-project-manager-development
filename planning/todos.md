@@ -45,7 +45,7 @@
 
 - [x] Asset domain model 與 portable `assets.json` catalog。
 - [x] file scanner、ignore rules、SHA-256 hash、missing record 與 atomic write。
-- [ ] FFprobe adapter。
+- [x] FFprobe adapter：argv-only `ffprobe` JSON parser 與 Windows 路徑測試。
 - [ ] thumbnail cache。
 - [ ] import／link／relink。
 - [ ] asset grid、preview、metadata panel。
@@ -58,20 +58,21 @@
 - [x] Kanban transitions。
 - [ ] progress calculation rules。
 - [ ] missing deliverables validator。
-- [ ] publishing checklist。
+- [x] publishing checklist：metadata readiness、dry-run、explicit confirmation。
 
 ## M5 — Editors
 
 - [x] Markdown script／publish editor。
 - [x] 800ms autosave、failed-save draft 保留與重啟草稿恢復。
 - [ ] subtitle parser／overlap validation。
-- [ ] metadata editor／clipboard actions。
+- [x] metadata editor／clipboard actions：發布 metadata UI 與 atomic `publish.json`。
 - [ ] versions／history。
 
 ## M6 — Release
 
 - [x] Windows MSI／NSIS build。
-- [ ] clean install test。
+- [x] artifact/release smoke test：MSI、NSIS、version、SHA-256。
+- [ ] clean install test（需要在隔離測試機執行 installer，不改動目前使用者安裝）。
 - [ ] upgrade test。
 - [ ] uninstall-preserves-library test。
 - [ ] signed build strategy。
