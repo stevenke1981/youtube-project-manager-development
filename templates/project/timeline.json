@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "duration_ms": 0,
   "tracks": [
     { "id": "00000000-0000-0000-0000-000000000001", "label": "V1 · 主畫面", "kind": "video", "clips": [] },
@@ -7,11 +7,26 @@
     { "id": "00000000-0000-0000-0000-000000000003", "label": "S1 · 字幕", "kind": "subtitle", "clips": [] }
   ],
   "output": {
-    "output_relative_path": "09_exports/timeline.mp4",
+    "output_relative_path": "09_exports/final.mp4",
     "format": "mp4",
     "width": 1920,
     "height": 1080,
-    "frame_rate": 30
+    "frame_rate": 30,
+    "subtitle_style": {
+      "font_name": "Noto Sans TC",
+      "font_size": 48,
+      "primary_color": "#FFFFFF",
+      "outline_color": "#000000",
+      "background_color": "#00000000",
+      "bold": false,
+      "italic": false,
+      "outline_width": 3,
+      "shadow_depth": 1,
+      "margin_left": 40,
+      "margin_right": 40,
+      "margin_vertical": 48,
+      "alignment": 2
+    }
   },
   "updated_at": "1970-01-01T00:00:00Z"
 }

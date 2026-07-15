@@ -7,6 +7,7 @@ import type {
   IndexReport,
   MediaExportRequest,
   MediaExportResult,
+  MediaJob,
   MediaMetadata,
   PublishConfigReference,
   PublishMetadata,
@@ -96,6 +97,7 @@ const demoTasks = new Map<string, Task[]>();
 const demoAssets = new Map<string, Asset[]>();
 const demoDocuments = new Map<string, string>();
 const demoTimelines = new Map<string, Timeline>();
+const demoMediaJobs = new Map<string, MediaJob>();
 const demoPublishMetadata = new Map<string, PublishMetadata>();
 
 function nowIso(): string {
@@ -119,9 +121,14 @@ function cloneTask(task: Task): Task {
 function cloneTimeline(timeline: Timeline): Timeline {
   return {
     ...timeline,
+    output: { ...timeline.output, subtitle_style: { ...timeline.output.subtitle_style } },
     tracks: timeline.tracks.map((track) => ({
       ...track,
-      clips: track.clips.map((clip) => ({ ...clip }))
+      clips: track.clips.map((clip) => ({
+        ...clip,
+        transition: clip.transition ? { ...clip.transition } : null,
+        effects: clip.effects.map((effect) => ({ ...effect }))
+      }))
     }))
   };
 }
@@ -532,10 +539,11 @@ function createDemoTimeline(projectPath: string): Timeline {
     duration_ms: out_ms - in_ms,
     volume: 1,
     muted: false,
-    transition: null
+    transition: null,
+    effects: []
   });
   return {
-    schema_version: 1,
+    schema_version: 2,
     duration_ms: 420_000,
     updated_at: now,
     tracks: [
@@ -562,11 +570,26 @@ function createDemoTimeline(projectPath: string): Timeline {
       }
     ],
     output: {
-      output_relative_path: "09_exports/timeline.mp4",
+      output_relative_path: "09_exports/final.mp4",
       format: "mp4",
       width: 1920,
       height: 1080,
-      frame_rate: 30
+      frame_rate: 30,
+      subtitle_style: {
+        font_family: "Noto Sans CJK TC",
+        font_size: 48,
+        primary_color: "#FFFFFF",
+        outline_color: "#000000",
+        background_color: "#00000000",
+        bold: false,
+        italic: false,
+        outline_width: 3,
+        shadow_depth: 1,
+        margin_left: 40,
+        margin_right: 40,
+        margin_vertical: 40,
+        alignment: 2
+      }
     }
   };
 }
@@ -627,6 +650,9 @@ export async function mediaProbe(
 export async function mediaExport(projectPath: string, request: MediaExportRequest, confirm = false): Promise<MediaExportResult> {
   if (!projectPath.trim()) throw new Error("找不到專案路徑，無法匯出媒體");
   if (!request.output_relative_path.trim()) throw new Error("輸出路徑不可為空");
+  if (request.format !== "mp4" || !request.output_relative_path.toLowerCase().endsWith(".mp4")) {
+    throw new Error("桌面匯出目前只支援 MP4，輸出路徑必須以 .mp4 結尾");
+  }
   if (!isTauri()) {
     await delay(650);
     return {
@@ -638,6 +664,104 @@ export async function mediaExport(projectPath: string, request: MediaExportReque
     };
   }
   return invoke<MediaExportResult>("media_export", { projectPath, request, confirm });
+}
+
+function materializeDemoMediaJob(job: MediaJob): MediaJob {
+  if (job.status === "cancelled" || job.status === "completed" || job.status === "failed") return { ...job };
+  const elapsed = Date.now() - Date.parse(job.created_at);
+  if (elapsed >= 3_000) {
+    const completed: MediaJob = {
+      ...job,
+      status: "completed",
+      progress: 100,
+      started_at: job.started_at ?? job.created_at,
+      finished_at: nowIso(),
+      message: "Web demo 已完成背景匯出流程預覽，未執行 FFmpeg。"
+    };
+    demoMediaJobs.set(job.id, completed);
+    return { ...completed };
+  }
+  const running: MediaJob = {
+    ...job,
+    status: elapsed >= 400 ? "running" : "queued",
+    progress: elapsed >= 400 ? Math.min(95, Math.max(5, Math.round(elapsed / 30))) : 0,
+    started_at: elapsed >= 400 ? job.started_at ?? nowIso() : null,
+    message: elapsed >= 400 ? "Web demo 正在模擬 FFmpeg 背景工作。" : "等待背景 worker。"
+  };
+  demoMediaJobs.set(job.id, running);
+  return { ...running };
+}
+
+export async function mediaExportEnqueue(
+  projectPath: string,
+  request: MediaExportRequest,
+  confirm = false
+): Promise<MediaJob> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法加入匯出工作");
+  if (!request.timeline) throw new Error("請先載入並儲存 timeline，再加入匯出工作");
+  if (!request.output_relative_path.trim()) throw new Error("輸出路徑不可為空");
+  if (request.format !== "mp4" || !request.output_relative_path.toLowerCase().endsWith(".mp4")) {
+    throw new Error("桌面匯出目前只支援 MP4，輸出路徑必須以 .mp4 結尾");
+  }
+  if (!confirm) throw new Error("加入背景匯出前需要明確確認");
+  if (!isTauri()) {
+    const now = nowIso();
+    const job: MediaJob = {
+      id: makeId(),
+      project_path: projectPath,
+      kind: "export",
+      status: "queued",
+      progress: 0,
+      output_relative_path: request.output_relative_path,
+      message: "等待背景 worker。",
+      created_at: now,
+      started_at: null,
+      finished_at: null
+    };
+    demoMediaJobs.set(job.id, job);
+    return { ...job };
+  }
+  return invoke<MediaJob>("media_export_enqueue", { projectPath, request, confirm });
+}
+
+export async function mediaJobStatus(projectPath: string, jobId: string): Promise<MediaJob> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法查詢背景工作");
+  if (!jobId.trim()) throw new Error("找不到背景工作 id");
+  if (!isTauri()) {
+    const job = demoMediaJobs.get(jobId);
+    if (!job || job.project_path !== projectPath) throw new Error("找不到指定專案的背景工作");
+    return materializeDemoMediaJob(job);
+  }
+  return invoke<MediaJob>("media_job_status", { projectPath, jobId });
+}
+
+export async function mediaJobList(projectPath: string): Promise<MediaJob[]> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法列出背景工作");
+  if (!isTauri()) {
+    return [...demoMediaJobs.values()]
+      .filter((job) => job.project_path === projectPath)
+      .map(materializeDemoMediaJob);
+  }
+  return invoke<MediaJob[]>("media_job_list", { projectPath });
+}
+
+export async function mediaJobCancel(projectPath: string, jobId: string): Promise<MediaJob> {
+  if (!projectPath.trim()) throw new Error("找不到專案路徑，無法取消背景工作");
+  if (!jobId.trim()) throw new Error("找不到要取消的背景工作 id");
+  if (!isTauri()) {
+    const job = demoMediaJobs.get(jobId);
+    if (!job || job.project_path !== projectPath) throw new Error("找不到指定專案的背景工作");
+    if (job.status === "completed" || job.status === "failed" || job.status === "cancelled") return { ...job };
+    const cancelled: MediaJob = {
+      ...job,
+      status: "cancelled",
+      finished_at: nowIso(),
+      message: "使用者已取消背景匯出。"
+    };
+    demoMediaJobs.set(jobId, cancelled);
+    return { ...cancelled };
+  }
+  return invoke<MediaJob>("media_job_cancel", { projectPath, jobId });
 }
 
 export async function mediaOperationCancel(

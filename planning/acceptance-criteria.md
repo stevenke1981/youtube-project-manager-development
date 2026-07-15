@@ -67,3 +67,19 @@ Given 本機已設定 OAuth client reference，When 使用者完成 metadata 並
 ## AC-17 Windows installer
 
 Given clean Windows TEMP fixture，When 建置 MSI/NSIS 並安裝／解除安裝，Then App executable 可啟動、checksum 可驗證，且 Library fixture、project.json、assets 與 timeline 全部保留。
+
+## AC-18 Timeline v2 migration and typed effects
+
+Given portable timeline schema v1，When App 讀取 timeline，Then 先建立 exact-byte `.ytpm-backup/` 再原子寫入 v2；typed color/blur/sharpen/vignette/chroma/fade/transform 可重載，任意 raw filter 或超界數值不可進入 FFmpeg。
+
+## AC-19 Subtitle burn-in
+
+Given subtitle track 引用 SRT 或 WebVTT，When export，Then cue 依 clip in/out/start 正確裁切與位移，特殊字元安全寫入 UTF-8 ASS，樣式套用後由 FFmpeg 燒錄；junction、absolute path、`..` 與不支援格式在啟動工具前失敗。
+
+## AC-20 Complete filter graph
+
+Given 多個 video/audio clips 與 typed effects，When compile/export，Then 產生 deterministic 單一 `filter_complex`，video 依 timeline overlay、audio 依 start 延遲並混音、transition/effects 只來自 allowlist；既有輸出不被覆寫。
+
+## AC-21 Background queue and numbered flow
+
+Given 使用者依桌面 1–10 操作，When enqueue export，Then UI 立即返回並輪詢 queued/running/progress；完成顯示 output，失敗顯示可行動錯誤，取消 running job 終止 FFmpeg 並清理 partial output。App restart 後明確提示 process-local job 需重新 enqueue。

@@ -3,6 +3,7 @@ mod commands;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(ytpm_core::MediaJobQueue::new())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::project_create,
@@ -27,6 +28,10 @@ pub fn run() {
             commands::timeline_save,
             commands::media_probe,
             commands::media_export,
+            commands::media_export_enqueue,
+            commands::media_job_status,
+            commands::media_job_list,
+            commands::media_job_cancel,
             commands::media_operation_cancel,
             commands::publish_config_reference,
             commands::publish_auth_start,

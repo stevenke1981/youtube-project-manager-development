@@ -6,17 +6,22 @@
 use crate::error::{Result, YtpmError};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 use uuid::Uuid;
 
-pub const CURRENT_TIMELINE_SCHEMA_VERSION: u32 = 1;
+pub const CURRENT_TIMELINE_SCHEMA_VERSION: u32 = 2;
 pub const TIMELINE_SCHEMA_VERSION: u32 = CURRENT_TIMELINE_SCHEMA_VERSION;
 const TIMELINE_FILE_NAME: &str = "timeline.json";
+const TIMELINE_BACKUP_DIR: &str = ".ytpm-backup";
 const MAX_TIMELINE_JSON_BYTES: u64 = 8 * 1024 * 1024;
+type TimelineLock = Arc<Mutex<()>>;
+type TimelineLockRegistry = Mutex<HashMap<PathBuf, Weak<Mutex<()>>>>;
+static TIMELINE_LOCKS: OnceLock<TimelineLockRegistry> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -34,6 +39,91 @@ pub struct Transition {
     pub duration_ms: u64,
 }
 
+/// Closed, portable effect vocabulary. Arbitrary filter expressions are never
+/// persisted in `timeline.json`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ClipEffect {
+    ColorAdjust {
+        brightness: f32,
+        contrast: f32,
+        saturation: f32,
+        gamma: f32,
+    },
+    Blur {
+        radius: f32,
+    },
+    Sharpen {
+        amount: f32,
+    },
+    Vignette {
+        angle: f32,
+    },
+    ChromaKey {
+        color: String,
+        similarity: f32,
+        blend: f32,
+    },
+    FadeIn {
+        duration_ms: u64,
+    },
+    FadeOut {
+        duration_ms: u64,
+    },
+    Transform {
+        x: f32,
+        y: f32,
+        scale: f32,
+        rotation_degrees: f32,
+        opacity: f32,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SubtitleStyle {
+    #[serde(rename = "font_name", alias = "font_family")]
+    pub font_family: String,
+    pub font_size: u32,
+    pub primary_color: String,
+    pub outline_color: String,
+    pub background_color: String,
+    #[serde(default)]
+    pub bold: bool,
+    #[serde(default)]
+    pub italic: bool,
+    pub outline_width: f32,
+    #[serde(default = "default_subtitle_shadow_depth")]
+    pub shadow_depth: f32,
+    #[serde(default = "default_subtitle_margin_horizontal")]
+    pub margin_left: u32,
+    #[serde(default = "default_subtitle_margin_horizontal")]
+    pub margin_right: u32,
+    pub margin_vertical: u32,
+    #[serde(default = "default_subtitle_alignment")]
+    pub alignment: u8,
+}
+
+impl Default for SubtitleStyle {
+    fn default() -> Self {
+        Self {
+            font_family: "Noto Sans TC".into(),
+            font_size: 48,
+            primary_color: "#FFFFFF".into(),
+            outline_color: "#000000".into(),
+            background_color: "#00000000".into(),
+            bold: false,
+            italic: false,
+            outline_width: 3.0,
+            shadow_depth: default_subtitle_shadow_depth(),
+            margin_left: default_subtitle_margin_horizontal(),
+            margin_right: default_subtitle_margin_horizontal(),
+            margin_vertical: 48,
+            alignment: default_subtitle_alignment(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct RenderSettings {
@@ -42,16 +132,19 @@ pub struct RenderSettings {
     pub width: u32,
     pub height: u32,
     pub frame_rate: f64,
+    #[serde(default)]
+    pub subtitle_style: SubtitleStyle,
 }
 
 impl Default for RenderSettings {
     fn default() -> Self {
         Self {
-            output_relative_path: "09_exports/timeline.mp4".into(),
+            output_relative_path: "09_exports/final.mp4".into(),
             format: "mp4".into(),
             width: 1920,
             height: 1080,
             frame_rate: 30.0,
+            subtitle_style: SubtitleStyle::default(),
         }
     }
 }
@@ -73,6 +166,8 @@ pub struct Clip {
     pub muted: bool,
     #[serde(default)]
     pub transition: Option<Transition>,
+    #[serde(default)]
+    pub effects: Vec<ClipEffect>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -142,6 +237,8 @@ pub struct ClipRequest {
     pub muted: bool,
     #[serde(default)]
     pub transition: Option<Transition>,
+    #[serde(default)]
+    pub effects: Vec<ClipEffect>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -167,6 +264,8 @@ pub struct ClipPatch {
     pub muted: Option<bool>,
     #[serde(default, deserialize_with = "deserialize_double_option")]
     pub transition: Option<Option<Transition>>,
+    #[serde(default)]
+    pub effects: Option<Vec<ClipEffect>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -183,6 +282,7 @@ pub struct RenderInput {
     pub volume: f32,
     pub muted: bool,
     pub transition: Option<Transition>,
+    pub effects: Vec<ClipEffect>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -231,6 +331,10 @@ pub struct TimelineValidationReport {
 
 /// Reads `timeline.json`, creating an empty portable timeline when absent.
 pub fn read_timeline(project_dir: &Path) -> Result<Timeline> {
+    with_timeline_lock(project_dir, || read_timeline_locked(project_dir))
+}
+
+fn read_timeline_locked(project_dir: &Path) -> Result<Timeline> {
     ensure_project_dir(project_dir)?;
     let path = timeline_path(project_dir);
     match fs::symlink_metadata(&path) {
@@ -245,7 +349,7 @@ pub fn read_timeline(project_dir: &Path) -> Result<Timeline> {
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             let timeline = Timeline::default();
-            return write_timeline(project_dir, &timeline);
+            return write_timeline_locked(project_dir, &timeline);
         }
         Err(error) => return Err(YtpmError::io(&path, error)),
     }
@@ -258,13 +362,36 @@ pub fn read_timeline(project_dir: &Path) -> Result<Timeline> {
         )));
     }
     let content = fs::read_to_string(&path).map_err(|error| YtpmError::io(&path, error))?;
-    let timeline: Timeline = serde_json::from_str(&content)?;
+    let mut value: serde_json::Value = serde_json::from_str(&content)?;
+    let schema_version = value
+        .get("schema_version")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| YtpmError::InvalidProject("timeline.json 缺少有效 schema_version".into()))?;
+
+    if schema_version == 1 {
+        migrate_v1_to_v2(&mut value)?;
+        let timeline: Timeline = serde_json::from_value(value)?;
+        validate(&timeline)?;
+        backup_v1_timeline(project_dir, content.as_bytes())?;
+        return write_timeline_locked(project_dir, &timeline);
+    }
+    if schema_version != u64::from(CURRENT_TIMELINE_SCHEMA_VERSION) {
+        return Err(YtpmError::InvalidProject(format!(
+            "不支援 timeline.json schema_version {schema_version}，目前版本為 {CURRENT_TIMELINE_SCHEMA_VERSION}"
+        )));
+    }
+
+    let timeline: Timeline = serde_json::from_value(value)?;
     validate(&timeline)?;
     Ok(timeline)
 }
 
 /// Validates and atomically replaces `timeline.json`.
 pub fn write_timeline(project_dir: &Path, timeline: &Timeline) -> Result<Timeline> {
+    with_timeline_lock(project_dir, || write_timeline_locked(project_dir, timeline))
+}
+
+fn write_timeline_locked(project_dir: &Path, timeline: &Timeline) -> Result<Timeline> {
     ensure_project_dir(project_dir)?;
     let mut persisted = timeline.clone();
     validate(&persisted)?;
@@ -276,102 +403,112 @@ pub fn write_timeline(project_dir: &Path, timeline: &Timeline) -> Result<Timelin
 /// Adds a newly identified clip to an existing track and keeps media untouched.
 pub fn add_clip(project_dir: &Path, track_id: &str, request: ClipRequest) -> Result<Clip> {
     validate_uuid(track_id, "track id")?;
-    let mut timeline = read_timeline(project_dir)?;
-    let track_index = find_track_index(&timeline, track_id)?;
-    let clip = Clip {
-        id: Uuid::new_v4().to_string(),
-        asset_id: request.asset_id,
-        relative_path: request.relative_path,
-        label: request.label,
-        start_ms: request.start_ms,
-        in_ms: request.in_ms,
-        out_ms: request.out_ms,
-        duration_ms: request
-            .out_ms
-            .checked_sub(request.in_ms)
-            .ok_or_else(|| YtpmError::InvalidInput("clip out_ms 必須大於 in_ms".into()))?,
-        volume: request.volume,
-        muted: request.muted,
-        transition: request.transition,
-    };
-    validate_clip(&clip)?;
-    timeline.duration_ms = timeline.duration_ms.max(clip_end(&clip)?);
-    timeline.tracks[track_index].clips.push(clip.clone());
-    validate(&timeline)?;
-    write_timeline(project_dir, &timeline)?;
-    Ok(clip)
+    with_timeline_lock(project_dir, || {
+        let mut timeline = read_timeline_locked(project_dir)?;
+        let track_index = find_track_index(&timeline, track_id)?;
+        let clip = Clip {
+            id: Uuid::new_v4().to_string(),
+            asset_id: request.asset_id,
+            relative_path: request.relative_path,
+            label: request.label,
+            start_ms: request.start_ms,
+            in_ms: request.in_ms,
+            out_ms: request.out_ms,
+            duration_ms: request
+                .out_ms
+                .checked_sub(request.in_ms)
+                .ok_or_else(|| YtpmError::InvalidInput("clip out_ms 必須大於 in_ms".into()))?,
+            volume: request.volume,
+            muted: request.muted,
+            transition: request.transition,
+            effects: request.effects,
+        };
+        validate_clip(&clip)?;
+        timeline.duration_ms = timeline.duration_ms.max(clip_end(&clip)?);
+        timeline.tracks[track_index].clips.push(clip.clone());
+        validate(&timeline)?;
+        write_timeline_locked(project_dir, &timeline)?;
+        Ok(clip)
+    })
 }
 
 /// Applies a partial clip update, optionally moving the clip to another track.
 pub fn update_clip(project_dir: &Path, clip_id: &str, patch: ClipPatch) -> Result<Clip> {
     validate_uuid(clip_id, "clip id")?;
-    let mut timeline = read_timeline(project_dir)?;
-    let (old_track_index, clip_index) = find_clip_index(&timeline, clip_id)?;
-    let mut clip = timeline.tracks[old_track_index].clips[clip_index].clone();
+    with_timeline_lock(project_dir, || {
+        let mut timeline = read_timeline_locked(project_dir)?;
+        let (old_track_index, clip_index) = find_clip_index(&timeline, clip_id)?;
+        let mut clip = timeline.tracks[old_track_index].clips[clip_index].clone();
 
-    if let Some(asset_id) = patch.asset_id {
-        clip.asset_id = asset_id;
-    }
-    if let Some(relative_path) = patch.relative_path {
-        clip.relative_path = relative_path;
-    }
-    if let Some(label) = patch.label {
-        clip.label = label;
-    }
-    if let Some(start_ms) = patch.start_ms {
-        clip.start_ms = start_ms;
-    }
-    if let Some(in_ms) = patch.in_ms {
-        clip.in_ms = in_ms;
-    }
-    if let Some(out_ms) = patch.out_ms {
-        clip.out_ms = out_ms;
-    }
-    clip.duration_ms = clip
-        .out_ms
-        .checked_sub(clip.in_ms)
-        .ok_or_else(|| YtpmError::InvalidInput("clip out_ms 必須大於 in_ms".into()))?;
-    if let Some(volume) = patch.volume {
-        clip.volume = volume;
-    }
-    if let Some(muted) = patch.muted {
-        clip.muted = muted;
-    }
-    if let Some(transition) = patch.transition {
-        clip.transition = transition;
-    }
-    validate_clip(&clip)?;
-
-    let target_track_index = match patch.track_id {
-        Some(track_id) => {
-            validate_uuid(&track_id, "track id")?;
-            find_track_index(&timeline, &track_id)?
+        if let Some(asset_id) = patch.asset_id {
+            clip.asset_id = asset_id;
         }
-        None => old_track_index,
-    };
-    let updated = if old_track_index == target_track_index {
-        timeline.tracks[old_track_index].clips[clip_index] = clip.clone();
-        clip
-    } else {
-        timeline.tracks[old_track_index].clips.remove(clip_index);
-        timeline.tracks[target_track_index].clips.push(clip.clone());
-        clip
-    };
-    timeline.duration_ms = timeline.duration_ms.max(clip_end(&updated)?);
-    validate(&timeline)?;
-    write_timeline(project_dir, &timeline)?;
-    Ok(updated)
+        if let Some(relative_path) = patch.relative_path {
+            clip.relative_path = relative_path;
+        }
+        if let Some(label) = patch.label {
+            clip.label = label;
+        }
+        if let Some(start_ms) = patch.start_ms {
+            clip.start_ms = start_ms;
+        }
+        if let Some(in_ms) = patch.in_ms {
+            clip.in_ms = in_ms;
+        }
+        if let Some(out_ms) = patch.out_ms {
+            clip.out_ms = out_ms;
+        }
+        clip.duration_ms = clip
+            .out_ms
+            .checked_sub(clip.in_ms)
+            .ok_or_else(|| YtpmError::InvalidInput("clip out_ms 必須大於 in_ms".into()))?;
+        if let Some(volume) = patch.volume {
+            clip.volume = volume;
+        }
+        if let Some(muted) = patch.muted {
+            clip.muted = muted;
+        }
+        if let Some(transition) = patch.transition {
+            clip.transition = transition;
+        }
+        if let Some(effects) = patch.effects {
+            clip.effects = effects;
+        }
+        validate_clip(&clip)?;
+
+        let target_track_index = match patch.track_id {
+            Some(track_id) => {
+                validate_uuid(&track_id, "track id")?;
+                find_track_index(&timeline, &track_id)?
+            }
+            None => old_track_index,
+        };
+        let updated = if old_track_index == target_track_index {
+            timeline.tracks[old_track_index].clips[clip_index] = clip.clone();
+            clip
+        } else {
+            timeline.tracks[old_track_index].clips.remove(clip_index);
+            timeline.tracks[target_track_index].clips.push(clip.clone());
+            clip
+        };
+        timeline.duration_ms = timeline.duration_ms.max(clip_end(&updated)?);
+        validate(&timeline)?;
+        write_timeline_locked(project_dir, &timeline)?;
+        Ok(updated)
+    })
 }
 
 /// Removes a clip record only; the referenced media file remains in place.
 pub fn remove_clip(project_dir: &Path, clip_id: &str) -> Result<Clip> {
     validate_uuid(clip_id, "clip id")?;
-    let mut timeline = read_timeline(project_dir)?;
-    let (track_index, clip_index) = find_clip_index(&timeline, clip_id)?;
-    let removed = timeline.tracks[track_index].clips.remove(clip_index);
-    validate(&timeline)?;
-    write_timeline(project_dir, &timeline)?;
-    Ok(removed)
+    with_timeline_lock(project_dir, || {
+        let mut timeline = read_timeline_locked(project_dir)?;
+        let (track_index, clip_index) = find_clip_index(&timeline, clip_id)?;
+        let removed = timeline.tracks[track_index].clips.remove(clip_index);
+        validate(&timeline)?;
+        write_timeline_locked(project_dir, &timeline)?;
+        Ok(removed)
+    })
 }
 
 /// Produces a deterministic, portable input list for a future media adapter.
@@ -393,6 +530,7 @@ pub fn render_manifest(timeline: &Timeline) -> Result<RenderManifest> {
             volume: clip.volume,
             muted: clip.muted,
             transition: clip.transition.clone(),
+            effects: clip.effects.clone(),
         })
         .collect();
 
@@ -460,6 +598,12 @@ pub fn validate(timeline: &Timeline) -> Result<()> {
         let mut clips = Vec::with_capacity(track.clips.len());
         for clip in &track.clips {
             validate_clip(clip)?;
+            if track.kind != TrackKind::Video && !clip.effects.is_empty() {
+                return Err(YtpmError::InvalidInput(format!(
+                    "video effects 只能套用在 video track：{}",
+                    clip.id
+                )));
+            }
             if !clip_ids.insert(clip.id.as_str()) {
                 return Err(YtpmError::InvalidProject(format!(
                     "clip id 不可重複：{}",
@@ -531,21 +675,107 @@ fn validate_clip(clip: &Clip) -> Result<()> {
             )));
         }
     }
+    for effect in &clip.effects {
+        validate_effect(effect, clip)?;
+    }
+    Ok(())
+}
+
+fn validate_effect(effect: &ClipEffect, clip: &Clip) -> Result<()> {
+    let invalid = |message: &str| {
+        YtpmError::InvalidInput(format!("clip effect 無效（{}）：{message}", clip.id))
+    };
+    match effect {
+        ClipEffect::ColorAdjust {
+            brightness,
+            contrast,
+            saturation,
+            gamma,
+        } => {
+            validate_number_range(*brightness, -1.0, 1.0, "brightness", &invalid)?;
+            validate_number_range(*contrast, 0.0, 4.0, "contrast", &invalid)?;
+            validate_number_range(*saturation, 0.0, 4.0, "saturation", &invalid)?;
+            validate_number_range(*gamma, 0.1, 10.0, "gamma", &invalid)?;
+        }
+        ClipEffect::Blur { radius } => {
+            validate_number_range(*radius, 0.0, 100.0, "blur radius", &invalid)?;
+        }
+        ClipEffect::Sharpen { amount } => {
+            validate_number_range(*amount, 0.0, 5.0, "sharpen amount", &invalid)?;
+        }
+        ClipEffect::Vignette { angle } => {
+            validate_number_range(
+                *angle,
+                0.0,
+                std::f32::consts::PI,
+                "vignette angle",
+                &invalid,
+            )?;
+        }
+        ClipEffect::ChromaKey {
+            color,
+            similarity,
+            blend,
+        } => {
+            if !is_hex_color(color, false) {
+                return Err(invalid("chroma key color 必須是 #RRGGBB"));
+            }
+            validate_number_range(*similarity, 0.0, 1.0, "chroma key similarity", &invalid)?;
+            validate_number_range(*blend, 0.0, 1.0, "chroma key blend", &invalid)?;
+        }
+        ClipEffect::FadeIn { duration_ms } | ClipEffect::FadeOut { duration_ms } => {
+            if *duration_ms == 0 || *duration_ms > clip.duration_ms {
+                return Err(invalid(
+                    "fade duration_ms 必須大於 0 且不可超過 clip duration_ms",
+                ));
+            }
+        }
+        ClipEffect::Transform {
+            x,
+            y,
+            scale,
+            rotation_degrees,
+            opacity,
+        } => {
+            validate_number_range(*x, -100_000.0, 100_000.0, "transform x", &invalid)?;
+            validate_number_range(*y, -100_000.0, 100_000.0, "transform y", &invalid)?;
+            validate_number_range(*scale, 0.01, 100.0, "transform scale", &invalid)?;
+            validate_number_range(
+                *rotation_degrees,
+                -3600.0,
+                3600.0,
+                "transform rotation_degrees",
+                &invalid,
+            )?;
+            validate_number_range(*opacity, 0.0, 1.0, "transform opacity", &invalid)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_number_range<F>(
+    value: f32,
+    minimum: f32,
+    maximum: f32,
+    field: &str,
+    invalid: &F,
+) -> Result<()>
+where
+    F: Fn(&str) -> YtpmError,
+{
+    if !value.is_finite() || value < minimum || value > maximum {
+        return Err(invalid(&format!(
+            "{field} 必須是 {minimum} 到 {maximum} 之間的有限數字"
+        )));
+    }
     Ok(())
 }
 
 fn validate_render_settings(settings: &RenderSettings) -> Result<()> {
-    validate_relative_path(
-        &settings.output_relative_path,
-        "output output_relative_path",
-    )?;
-    if settings.format.trim().is_empty()
-        || settings.format.chars().any(|character| {
-            !character.is_ascii_alphanumeric() && character != '_' && character != '-'
-        })
-    {
+    validate_output_relative_path(&settings.output_relative_path)?;
+    if settings.format != "mp4" {
         return Err(YtpmError::InvalidInput(
-            "output format 必須是簡單的檔案格式名稱".into(),
+            "output format 目前只支援 mp4".into(),
         ));
     }
     if settings.width == 0 || settings.height == 0 {
@@ -558,7 +788,60 @@ fn validate_render_settings(settings: &RenderSettings) -> Result<()> {
             "output frame_rate 必須是正的有限數字".into(),
         ));
     }
+    validate_subtitle_style(&settings.subtitle_style)?;
     Ok(())
+}
+
+fn validate_subtitle_style(style: &SubtitleStyle) -> Result<()> {
+    if style.font_family.trim().is_empty() || style.font_family.chars().any(char::is_control) {
+        return Err(YtpmError::InvalidInput(
+            "subtitle_style font_name 不可為空或包含控制字元".into(),
+        ));
+    }
+    if !(8..=300).contains(&style.font_size) {
+        return Err(YtpmError::InvalidInput(
+            "subtitle_style font_size 必須介於 8 到 300".into(),
+        ));
+    }
+    for (name, color) in [
+        ("primary_color", &style.primary_color),
+        ("outline_color", &style.outline_color),
+        ("background_color", &style.background_color),
+    ] {
+        if !is_hex_color(color, true) {
+            return Err(YtpmError::InvalidInput(format!(
+                "subtitle_style {name} 必須是 #RRGGBB 或 #RRGGBBAA"
+            )));
+        }
+    }
+    if !style.outline_width.is_finite()
+        || !(0.0..=20.0).contains(&style.outline_width)
+        || !style.shadow_depth.is_finite()
+        || !(0.0..=20.0).contains(&style.shadow_depth)
+    {
+        return Err(YtpmError::InvalidInput(
+            "subtitle_style outline_width 與 shadow_depth 必須介於 0 到 20".into(),
+        ));
+    }
+    if style.margin_left > 10_000 || style.margin_right > 10_000 || style.margin_vertical > 10_000 {
+        return Err(YtpmError::InvalidInput(
+            "subtitle_style margins 不可超過 10000".into(),
+        ));
+    }
+    if !(1..=9).contains(&style.alignment) {
+        return Err(YtpmError::InvalidInput(
+            "subtitle_style alignment 必須介於 1 到 9".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn is_hex_color(value: &str, allow_alpha: bool) -> bool {
+    let digits = value.strip_prefix('#').unwrap_or_default();
+    (digits.len() == 6 || (allow_alpha && digits.len() == 8))
+        && digits
+            .chars()
+            .all(|character| character.is_ascii_hexdigit())
 }
 
 fn clip_end(clip: &Clip) -> Result<u64> {
@@ -665,6 +948,101 @@ fn validate_relative_path(value: &str, field: &str) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn validate_output_relative_path(value: &str) -> Result<()> {
+    validate_relative_path(value, "output output_relative_path")?;
+    let is_mp4 = Path::new(value)
+        .extension()
+        .and_then(OsStr::to_str)
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("mp4"));
+    if !is_mp4 {
+        return Err(YtpmError::InvalidInput(
+            "匯出輸出路徑目前只支援 .mp4 副檔名".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn migrate_v1_to_v2(value: &mut serde_json::Value) -> Result<()> {
+    let root = value
+        .as_object_mut()
+        .ok_or_else(|| YtpmError::InvalidProject("timeline.json root 必須是 JSON object".into()))?;
+    let tracks = root
+        .get_mut("tracks")
+        .and_then(serde_json::Value::as_array_mut)
+        .ok_or_else(|| YtpmError::InvalidProject("timeline.json tracks 必須是 array".into()))?;
+    for track in tracks {
+        let clips = track
+            .get_mut("clips")
+            .and_then(serde_json::Value::as_array_mut)
+            .ok_or_else(|| {
+                YtpmError::InvalidProject("timeline.json track clips 必須是 array".into())
+            })?;
+        for clip in clips {
+            let object = clip.as_object_mut().ok_or_else(|| {
+                YtpmError::InvalidProject("timeline.json clip 必須是 object".into())
+            })?;
+            object
+                .entry("effects")
+                .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+        }
+    }
+    let output = root
+        .get_mut("output")
+        .and_then(serde_json::Value::as_object_mut)
+        .ok_or_else(|| YtpmError::InvalidProject("timeline.json output 必須是 object".into()))?;
+    output.entry("subtitle_style").or_insert(
+        serde_json::to_value(SubtitleStyle::default())
+            .map_err(|error| YtpmError::InvalidProject(error.to_string()))?,
+    );
+    root.insert(
+        "schema_version".into(),
+        serde_json::Value::from(CURRENT_TIMELINE_SCHEMA_VERSION),
+    );
+    Ok(())
+}
+
+fn backup_v1_timeline(project_dir: &Path, bytes: &[u8]) -> Result<PathBuf> {
+    let backup_dir = project_dir.join(TIMELINE_BACKUP_DIR);
+    match fs::symlink_metadata(&backup_dir) {
+        Ok(metadata) => {
+            if metadata_is_reparse_point(&metadata) || !metadata.is_dir() {
+                return Err(YtpmError::InvalidInput(format!(
+                    "拒絕使用非一般資料夾的 timeline backup：{}",
+                    backup_dir.display()
+                )));
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            create_dir_all_checked(&backup_dir)?;
+        }
+        Err(error) => return Err(YtpmError::io(&backup_dir, error)),
+    }
+    reject_reparse_points(&backup_dir)?;
+
+    let suffix = Uuid::new_v4().simple();
+    let backup_path = backup_dir.join(format!("timeline-v1-{suffix}.json"));
+    let temporary_path = backup_dir.join(format!(".timeline-v1-{suffix}.tmp"));
+    let result: Result<()> = (|| {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary_path)
+            .map_err(|error| YtpmError::io(&temporary_path, error))?;
+        file.write_all(bytes)
+            .map_err(|error| YtpmError::io(&temporary_path, error))?;
+        file.sync_all()
+            .map_err(|error| YtpmError::io(&temporary_path, error))?;
+        fs::rename(&temporary_path, &backup_path)
+            .map_err(|error| YtpmError::io(&backup_path, error))?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary_path);
+    }
+    result?;
+    Ok(backup_path)
+}
+
 fn ensure_project_dir(project_dir: &Path) -> Result<()> {
     if project_dir
         .components()
@@ -676,7 +1054,7 @@ fn ensure_project_dir(project_dir: &Path) -> Result<()> {
         )));
     }
     if !project_dir.exists() {
-        fs::create_dir_all(project_dir).map_err(|error| YtpmError::io(project_dir, error))?;
+        create_dir_all_checked(project_dir)?;
     }
     reject_reparse_points(project_dir)?;
     let metadata = fs::metadata(project_dir).map_err(|error| YtpmError::io(project_dir, error))?;
@@ -685,6 +1063,87 @@ fn ensure_project_dir(project_dir: &Path) -> Result<()> {
             "專案路徑不是資料夾：{}",
             project_dir.display()
         )));
+    }
+    Ok(())
+}
+
+fn with_timeline_lock<T>(project_dir: &Path, operation: impl FnOnce() -> Result<T>) -> Result<T> {
+    let project_lock = project_timeline_lock(project_dir)?;
+    let _guard = project_lock
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    operation()
+}
+
+fn project_timeline_lock(project_dir: &Path) -> Result<TimelineLock> {
+    ensure_project_dir(project_dir)?;
+    let key = fs::canonicalize(project_dir).map_err(|error| YtpmError::io(project_dir, error))?;
+    reject_reparse_points(&key)?;
+    let registry = TIMELINE_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut locks = registry
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    locks.retain(|_, lock| lock.strong_count() > 0);
+    if let Some(existing) = locks.get(&key).and_then(Weak::upgrade) {
+        return Ok(existing);
+    }
+    let project_lock = Arc::new(Mutex::new(()));
+    locks.insert(key, Arc::downgrade(&project_lock));
+    Ok(project_lock)
+}
+
+fn create_dir_all_checked(path: &Path) -> Result<()> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|error| YtpmError::io(path, error))?
+            .join(path)
+    };
+    reject_reparse_points(&absolute)?;
+
+    let mut missing = Vec::new();
+    let mut current = absolute.as_path();
+    loop {
+        match fs::symlink_metadata(current) {
+            Ok(metadata) => {
+                if metadata_is_reparse_point(&metadata) || !metadata.is_dir() {
+                    return Err(YtpmError::InvalidInput(format!(
+                        "拒絕使用 reparse point 或非資料夾路徑：{}",
+                        current.display()
+                    )));
+                }
+                break;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                missing.push(current.to_path_buf());
+                current = current.parent().ok_or_else(|| {
+                    YtpmError::InvalidInput(format!("找不到可建立的上層資料夾：{}", path.display()))
+                })?;
+            }
+            Err(error) => return Err(YtpmError::io(current, error)),
+        }
+    }
+
+    for directory in missing.into_iter().rev() {
+        let parent = directory.parent().ok_or_else(|| {
+            YtpmError::InvalidInput(format!("找不到資料夾 parent：{}", directory.display()))
+        })?;
+        reject_reparse_points(parent)?;
+        match fs::create_dir(&directory) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(YtpmError::io(&directory, error)),
+        }
+        let metadata =
+            fs::symlink_metadata(&directory).map_err(|error| YtpmError::io(&directory, error))?;
+        if metadata_is_reparse_point(&metadata) || !metadata.is_dir() {
+            return Err(YtpmError::InvalidInput(format!(
+                "建立後偵測到 reparse point 或非資料夾路徑：{}",
+                directory.display()
+            )));
+        }
+        reject_reparse_points(&directory)?;
     }
     Ok(())
 }
@@ -733,12 +1192,12 @@ fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
 }
 
 #[cfg(not(windows))]
-fn replace_file(temporary_path: &Path, path: &Path) -> std::io::Result<()> {
+pub(crate) fn replace_file(temporary_path: &Path, path: &Path) -> std::io::Result<()> {
     fs::rename(temporary_path, path)
 }
 
 #[cfg(windows)]
-fn replace_file(temporary_path: &Path, path: &Path) -> std::io::Result<()> {
+pub(crate) fn replace_file(temporary_path: &Path, path: &Path) -> std::io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
 
     const MOVEFILE_REPLACE_EXISTING: u32 = 0x0000_0001;
@@ -805,6 +1264,18 @@ fn metadata_is_reparse_point(metadata: &fs::Metadata) -> bool {
 
 fn default_volume() -> f32 {
     1.0
+}
+
+fn default_subtitle_shadow_depth() -> f32 {
+    1.0
+}
+
+fn default_subtitle_margin_horizontal() -> u32 {
+    40
+}
+
+fn default_subtitle_alignment() -> u8 {
+    2
 }
 
 fn deserialize_double_option<'de, D, T>(

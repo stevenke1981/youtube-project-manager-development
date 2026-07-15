@@ -113,6 +113,20 @@ YouTube 製作者常將腳本、TTS、圖片、分鏡、影片、字幕、封面
 - MSI/NSIS 安裝 App，不建立、搬移或刪除 Library。
 - Release check 驗證 executable、MSI、NSIS、checksum 與 clean-install；uninstall smoke 必須確認 Library fixture 保留。
 
+### FR-013 Typed NLE effects and subtitle burn-in
+
+- `timeline.json` schema v2 以 typed effect 保存色彩、模糊、銳化、暗角、去背、淡入淡出與 transform／opacity；不得接受任意 FFmpeg filter 字串。
+- Subtitle track 支援專案相對路徑 SRT／WebVTT，匯出時依 clip trim 與 timeline start 產生暫存 ASS 並燒錄。
+- 多軌 video/audio 必須編譯成單一 deterministic `filter_complex`；參數只經 argv 傳遞，非法數值與路徑在啟動 FFmpeg 前拒絕。
+- Timeline v1 開啟時先建立 `.ytpm-backup/`，再原子 migration 至 v2。
+
+### FR-014 Background media jobs
+
+- 匯出由單一背景 worker 排程，UI 不得在 FFmpeg 執行期間凍結。
+- Job 提供 queued、running、completed、failed、cancelled、進度、輸出與可行動訊息。
+- 取消 running job 必須終止 FFmpeg child；失敗／取消不可覆寫既有輸出。
+- Queue 狀態可為 process-local，但 portable timeline、素材與成功輸出仍是可恢復的 durable boundary。
+
 ## 6. v0.1 暫不包含（v0.2 已納入實作範圍）
 
 - 完整影片時間軸剪輯（v0.2 timeline 以 non-destructive cut/trim/export 為範圍）。

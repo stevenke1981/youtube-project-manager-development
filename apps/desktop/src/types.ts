@@ -169,6 +169,45 @@ export interface TimelineTransition {
   duration_ms: number;
 }
 
+export type TimelineClipEffect =
+  | {
+      kind: "color_adjust";
+      brightness: number;
+      contrast: number;
+      saturation: number;
+      gamma: number;
+    }
+  | { kind: "blur"; radius: number }
+  | { kind: "sharpen"; amount: number }
+  | { kind: "vignette"; angle: number }
+  | { kind: "chroma_key"; color: string; similarity: number; blend: number }
+  | { kind: "fade_in"; duration_ms: number }
+  | { kind: "fade_out"; duration_ms: number }
+  | {
+      kind: "transform";
+      x: number;
+      y: number;
+      scale: number;
+      rotation_degrees: number;
+      opacity: number;
+    };
+
+export interface TimelineSubtitleStyle {
+  font_family: string;
+  font_size: number;
+  primary_color: string;
+  outline_color: string;
+  background_color: string;
+  bold: boolean;
+  italic: boolean;
+  outline_width: number;
+  shadow_depth: number;
+  margin_left: number;
+  margin_right: number;
+  margin_vertical: number;
+  alignment: number;
+}
+
 export interface TimelineClip {
   id: string;
   asset_id: string;
@@ -181,6 +220,7 @@ export interface TimelineClip {
   volume: number;
   muted: boolean;
   transition: TimelineTransition | null;
+  effects: TimelineClipEffect[];
 }
 
 export interface TimelineTrack {
@@ -191,15 +231,16 @@ export interface TimelineTrack {
 }
 
 export interface Timeline {
-  schema_version: 1;
+  schema_version: 1 | 2;
   duration_ms: number;
   tracks: TimelineTrack[];
   output: {
     output_relative_path: string;
-    format: string;
+    format: "mp4";
     width: number;
     height: number;
     frame_rate: number;
+    subtitle_style: TimelineSubtitleStyle;
   };
   updated_at: string;
 }
@@ -243,8 +284,8 @@ export type MediaOperationKind = "probe" | "export";
 export interface MediaExportRequest {
   source_asset_id: string | null;
   output_relative_path: string;
-  format: "mp4" | "webm";
-  timeline: Timeline | null;
+  format: "mp4";
+  timeline: Timeline;
 }
 
 export interface MediaExportResult {
@@ -253,6 +294,21 @@ export interface MediaExportResult {
   progress: number;
   output_relative_path: string | null;
   message: string | null;
+}
+
+export type MediaJobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+
+export interface MediaJob {
+  id: string;
+  project_path: string;
+  kind: "export";
+  status: MediaJobStatus;
+  progress: number;
+  output_relative_path: string;
+  message: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
 }
 
 export type PublishVisibility = "private" | "unlisted" | "public";

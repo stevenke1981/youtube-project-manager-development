@@ -105,6 +105,7 @@ fn ffmpeg_renders_a_real_trimmed_timeline_when_available() {
         volume: 1.0,
         muted: false,
         transition: None,
+        effects: Vec::new(),
     });
     timeline.tracks[1].clips.push(Clip {
         id: uuid::Uuid::new_v4().to_string(),
@@ -118,6 +119,7 @@ fn ffmpeg_renders_a_real_trimmed_timeline_when_available() {
         volume: 0.5,
         muted: false,
         transition: None,
+        effects: Vec::new(),
     });
     let result =
         ytpm_core::export_timeline(project.path(), &timeline, "09_exports/final.mp4", None)

@@ -2,7 +2,7 @@
 
 ## 目前交付
 
-此版本為 **v0.2 可使用的離線桌面 media workstation**；已加入非破壞式時間軸剪輯、FFprobe/FFmpeg 與明確確認的 YouTube resumable upload adapter。它不是 Premiere 等級的特效／多機位 NLE，也不長期代管使用者秘密。
+此版本為 **可使用的離線桌面 NLE production workstation**；已加入 timeline schema v2、typed professional effects、多軌 FFmpeg filter graph、字幕燒錄、背景匯出 queue，以及明確確認的 YouTube resumable upload adapter。它不宣稱逐項複製 Adobe Premiere Pro 的專有引擎，也不長期代管使用者秘密。
 
 已包含：
 
@@ -30,6 +30,11 @@
 - YouTube：metadata atomic save、readiness checklist、PKCE/state OAuth URL、refresh-token exchange、resumable `videos.insert`、dry-run 與 `confirm=true` gate。
 - Desktop media workstation：影片／發布分頁具備 1–7 編號操作、timeline trim、probe、export、5A/5B PKCE callback、dry-run、確認上傳與錯誤／成功狀態。
 - Windows release v0.2.0：MSI、NSIS、`release-checks.ps1` 與只讀 `installer-smoke.ps1`，產生 SHA-256 checksum。
+- Timeline v2：typed color/blur/sharpen/vignette/chroma/fade/transform、subtitle style、v1 exact-byte backup 與 atomic migration。
+- FFmpeg filter graph：單次 argv-only process 完成多軌 video overlay、audio delay/mix、transition、effects 與 ASS subtitle burn-in；不接受 raw filter text。
+- Background export：process-local single worker、五種 job state、progress pipe、running child termination、partial output/temp cleanup。
+- Data safety review：final output 改為 job-owned temp＋atomic no-overwrite publish；timeline migration/edit 以 per-project lock 序列化，queue/project path 與 Windows reserved／ADS／reparse 規則在入列前驗證。
+- Desktop NLE：1–10 編號流程、asset/track 選擇、clip inspector、typed effect controls、字幕樣式、queue 進度與取消。
 
 ## 驗證狀態
 
@@ -40,17 +45,22 @@
 - [x] `npm install`、`npm run typecheck`、`npm run test`、`npm run build`。
 - [x] CLI 中文 Windows path smoke：create/list/validate。
 - [x] `npm run desktop:build`：產生 MSI、NSIS 與 release executable。
-- [x] core/workspace tests（核心含 index、Task、Asset、Document、journal、timeline、FFprobe、FFmpeg、publish；React 15 tests）、workspace clippy/test、中文／空白路徑 smoke。
+- [x] core/workspace tests（84 Rust tests；核心含 index、Task、Asset、Document、journal、timeline v2、filter graph、subtitle、job queue、FFprobe、實際 FFmpeg、publish；React 20 tests）。
 - [x] `scripts/smoke-junction.ps1`：中文 Windows 路徑與 junction validation 回傳非零且包含 `REQUIRED_DIRECTORY_SYMLINK`。
-- [x] `cargo test -p ytpm-core`：核心 59 tests，包含 timeline、FFprobe、實際 FFmpeg trim/export、publish metadata/OAuth PKCE dry-run。
+- [x] `cargo test --workspace`：84 tests；包含 timeline migration/serialization、atomic publish、filter allowlist、SRT/VTT/ASS、project-scoped job cancellation、FFprobe、實際 FFmpeg render、publish metadata/OAuth PKCE dry-run。
 - [x] `cargo check -p ytpm-desktop`、`npm run typecheck`、`npm test`、`npm run build`。
+- [x] `scripts/release-checks.ps1 -Check All`、`scripts/installer-smoke.ps1 -InspectOnly`：MSI／NSIS 與 SHA-256 通過，未變更使用者安裝。
+- [x] Release executable launch smoke：程序維持運行且 window title 為 `YouTube Project Manager`；驗證後停止測試程序。
+- [x] MSI SHA-256 `870EEB3E0AEE493E6A2538B8E8649E98CBF7B25100BB18A974854722C5C9A0A8`；NSIS SHA-256 `4227BF806E27F0FFA6FDE98487D402D8D278328F1AAF0A3648FB07FE8E516FA1`。
 
 ## 下一個開發者第一步
 
-1. 對 Asset Catalog 增加 incremental scan、thumbnail/preview 與 import/relink。
-2. 增加真正的 background media job queue、逐段進度事件與可中止的 in-flight FFmpeg/YouTube upload。
-3. 加入 subtitle parser、versions/history、字幕燒錄與更完整的多軌 filter graph；目前已完成可用的非破壞式基礎 NLE。
+1. 對 Asset Catalog 增加 incremental scan、thumbnail/preview、waveform 與 import/relink。
+2. 增加 hardware encoder profiles、proxy cache、versions/history 與可持久化的 render journal。
+3. 在隔離 Windows 測試機執行 signed clean install、upgrade 與 uninstall-preserves-library 測試。
 
 ## 回滾
 
 本次測試只使用 `%TEMP%` fixture，未修改使用者既有 Library。migration 會在專案內建立 `.ytpm-backup/`；archive/restore 會寫 operation journal，rollback 失敗時保留 journal 供人工恢復。SQLite index 可安全刪除後重建；`project.json`、`tasks.json`、`assets.json` 與實際文件仍是可攜式 source of truth。
+
+仍需在隔離 Windows 測試機執行實際 install/upgrade/uninstall-preserves-library，並規劃 signed installer；本次只做 inspect-only installer smoke。完整 Adobe Premiere Pro 專有特效、多機位、GPU hardware encoder profiles 與 persistent render journal 不在此 milestone 的完成宣稱內。

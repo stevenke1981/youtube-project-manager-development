@@ -2,10 +2,19 @@ import { describe, expect, it } from "vitest";
 import { AssetCatalogPanel, filterAssets, formatBytes, summarizeAssetCatalog } from "./components/AssetCatalogPanel";
 import { filterAndSortProjects, getDashboardEmptyState, getProjectMetrics } from "./components/Dashboard";
 import { getDocumentPath, getEditorNextStep, getSaveStatusLabel } from "./components/DocumentEditor";
+import {
+  createTimelineEffect,
+  DEFAULT_SUBTITLE_STYLE,
+  FINAL_OUTPUT_RELATIVE_PATH,
+  isAssetCompatibleWithTrack,
+  isTerminalMediaJobStatus,
+  mergeMediaJob,
+  normalizeTimeline
+} from "./components/MediaWorkspace";
 import { getNextTaskOrder, groupTasksByStatus } from "./components/TaskBoard";
 import { getStepState, WORKFLOW_STEPS } from "./components/StepGuide";
 import { getErrorMessage } from "./lib/commands";
-import type { Asset, Project, Task } from "./types";
+import type { Asset, MediaJob, Project, Task, Timeline } from "./types";
 
 function project(overrides: Partial<Project> = {}): Project {
   return {
@@ -187,5 +196,77 @@ describe("YTPM desktop workflow UI", () => {
 
   it("keeps the asset catalog component export available for the workspace surface", () => {
     expect(AssetCatalogPanel).toBeTypeOf("function");
+  });
+
+  it("creates only typed NLE effects with safe defaults", () => {
+    expect(createTimelineEffect("color_adjust")).toEqual({
+      kind: "color_adjust",
+      brightness: 0,
+      contrast: 1,
+      saturation: 1,
+      gamma: 1
+    });
+    expect(createTimelineEffect("transform")).toMatchObject({ kind: "transform", scale: 1, opacity: 1 });
+    expect(createTimelineEffect("chroma_key")).not.toHaveProperty("filter");
+  });
+
+  it("polls only non-terminal background media jobs", () => {
+    expect(isTerminalMediaJobStatus("queued")).toBe(false);
+    expect(isTerminalMediaJobStatus("running")).toBe(false);
+    expect(isTerminalMediaJobStatus("completed")).toBe(true);
+    expect(isTerminalMediaJobStatus("failed")).toBe(true);
+    expect(isTerminalMediaJobStatus("cancelled")).toBe(true);
+  });
+
+  it("allows only available assets on compatible timeline tracks", () => {
+    expect(isAssetCompatibleWithTrack(asset({ kind: "image" }), { kind: "video" })).toBe(true);
+    expect(isAssetCompatibleWithTrack(asset({ kind: "voice" }), { kind: "audio" })).toBe(true);
+    expect(isAssetCompatibleWithTrack(asset({ kind: "subtitle" }), { kind: "subtitle" })).toBe(true);
+    expect(isAssetCompatibleWithTrack(asset({ kind: "voice" }), { kind: "video" })).toBe(false);
+    expect(isAssetCompatibleWithTrack(asset({ kind: "video", state: "missing" }), { kind: "video" })).toBe(false);
+  });
+
+  it("normalizes the legacy timeline output to the final MP4", () => {
+    const timeline: Timeline = {
+      schema_version: 2,
+      duration_ms: 0,
+      tracks: [],
+      output: {
+        output_relative_path: "09_exports/timeline.mp4",
+        format: "mp4",
+        width: 1920,
+        height: 1080,
+        frame_rate: 30,
+        subtitle_style: { ...DEFAULT_SUBTITLE_STYLE }
+      },
+      updated_at: "2026-07-15T08:00:00.000Z"
+    };
+    expect(normalizeTimeline(timeline).output).toMatchObject({
+      output_relative_path: FINAL_OUTPUT_RELATIVE_PATH,
+      format: "mp4"
+    });
+  });
+
+  it("merges immediate queue updates without dropping other jobs", () => {
+    const base: MediaJob = {
+      id: "job-1",
+      project_path: "D:\\demo",
+      kind: "export",
+      status: "running",
+      progress: 20,
+      output_relative_path: FINAL_OUTPUT_RELATIVE_PATH,
+      message: null,
+      created_at: "2026-07-15T08:00:00.000Z",
+      started_at: null,
+      finished_at: null
+    };
+    const merged = mergeMediaJob([{ ...base }, { ...base, id: "job-2" }], {
+      ...base,
+      status: "cancelled",
+      finished_at: "2026-07-15T08:01:00.000Z"
+    });
+    expect(merged).toHaveLength(2);
+    expect(merged[0]).toMatchObject({ id: "job-1", status: "cancelled" });
+    expect(merged[1].id).toBe("job-2");
   });
 });

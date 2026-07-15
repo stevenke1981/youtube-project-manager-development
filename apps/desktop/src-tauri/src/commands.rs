@@ -2,10 +2,10 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use ytpm_core::{
-    Asset, AssetCatalog, AssetState, CreateProjectRequest, MediaProbe, OAuthCallbackResult,
-    OAuthStart, Project, ProjectStatus, PublishConfigReference, PublishMetadata, PublishResult,
-    RecoveryReport, Task, TaskPatch, TaskRequest, TaskStatus, Timeline, ValidationReport,
-    YtpmError,
+    Asset, AssetCatalog, AssetState, CreateProjectRequest, MediaJobQueue, MediaJobRecord,
+    MediaProbe, OAuthCallbackResult, OAuthStart, Project, ProjectStatus, PublishConfigReference,
+    PublishMetadata, PublishResult, RecoveryReport, Task, TaskPatch, TaskRequest, TaskStatus,
+    Timeline, ValidationReport, YtpmError,
 };
 
 #[derive(Debug, Serialize)]
@@ -135,6 +135,18 @@ pub struct MediaExportRequestDto {
     pub timeline: Timeline,
 }
 
+fn require_mp4_export(request: &MediaExportRequestDto) -> Result<(), CommandError> {
+    let output_is_mp4 = Path::new(&request.output_relative_path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("mp4"));
+    if request.format.eq_ignore_ascii_case("mp4") && output_is_mp4 {
+        return Ok(());
+    }
+
+    Err(YtpmError::InvalidInput("桌面匯出目前只支援 MP4，輸出路徑必須以 .mp4 結尾。".into()).into())
+}
+
 #[derive(Debug, Serialize)]
 pub struct MediaMetadataDto {
     pub asset_id: Option<String>,
@@ -171,8 +183,8 @@ pub async fn media_export(
     confirm: bool,
 ) -> Result<ytpm_core::MediaExportResult, CommandError> {
     require_confirmation("media.export", confirm)?;
+    require_mp4_export(&request)?;
     let _ = request.source_asset_id;
-    let _ = request.format;
     ytpm_core::export_timeline(
         Path::new(&project_path),
         &request.timeline,
@@ -180,6 +192,57 @@ pub async fn media_export(
         None,
     )
     .map_err(CommandError::from)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn media_export_enqueue(
+    queue: tauri::State<'_, MediaJobQueue>,
+    project_path: String,
+    request: MediaExportRequestDto,
+    confirm: bool,
+) -> Result<MediaJobRecord, CommandError> {
+    require_confirmation("media.export.enqueue", confirm)?;
+    require_mp4_export(&request)?;
+    let _ = request.source_asset_id;
+    queue
+        .enqueue_export(
+            PathBuf::from(project_path),
+            request.timeline,
+            request.output_relative_path,
+        )
+        .map_err(CommandError::from)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn media_job_status(
+    queue: tauri::State<'_, MediaJobQueue>,
+    project_path: String,
+    job_id: String,
+) -> Result<MediaJobRecord, CommandError> {
+    queue
+        .status_for_project(Path::new(&project_path), &job_id)
+        .map_err(CommandError::from)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn media_job_list(
+    queue: tauri::State<'_, MediaJobQueue>,
+    project_path: String,
+) -> Result<Vec<MediaJobRecord>, CommandError> {
+    queue
+        .list_for_project(Path::new(&project_path))
+        .map_err(CommandError::from)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn media_job_cancel(
+    queue: tauri::State<'_, MediaJobQueue>,
+    project_path: String,
+    job_id: String,
+) -> Result<MediaJobRecord, CommandError> {
+    queue
+        .cancel_for_project(Path::new(&project_path), &job_id)
+        .map_err(CommandError::from)
 }
 
 #[tauri::command(rename_all = "camelCase")]

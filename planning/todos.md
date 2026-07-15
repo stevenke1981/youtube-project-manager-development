@@ -77,3 +77,15 @@
 - [ ] uninstall-preserves-library test。
 - [ ] signed build strategy。
 - [ ] SBOM／third-party notices。
+
+## M7 — NLE v1.0
+
+- [x] timeline schema v2、typed effects、subtitle style 與 v1 backup migration。
+- [x] 多軌 video/audio deterministic FFmpeg filter graph。
+- [x] SRT／WebVTT 解析、時間 trim/offset 與 ASS subtitle burn-in。
+- [x] cancellable FFmpeg child、進度回報與失敗清理。
+- [x] single-worker background export job queue 與 Tauri commands。
+- [x] 編號化 editor flow、track/effect/subtitle controls、queue progress/cancel UI。
+- [x] Windows 中文／空白路徑、filter escaping、junction/reparse regression。
+- [x] 完整 Rust、frontend、reproducible UI/build、installer/release gate。
+- [ ] git commit、push 與遠端 SHA parity 驗證。

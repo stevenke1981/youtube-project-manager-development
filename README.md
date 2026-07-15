@@ -6,7 +6,7 @@
 
 - 完整產品需求與使用流程設計。
 - UI／UX 規格、頁面線框與設計 Token。
-- Rust 共用核心、CLI、Tauri 2＋React 桌面端可使用 v0.2 media workstation。
+- Rust 共用核心、CLI、Tauri 2＋React 桌面端可使用 NLE production workstation。
 - 可實際建立、列出、驗證、索引影片專案，並管理 Task/Kanban、Asset Catalog 與文件編輯。
 - 可封存／還原專案，並保留封存前製作階段。
 - JSON Schema、SQLite migration、專案資料夾範本。
@@ -29,7 +29,7 @@
 - Core／CLI：Rust
 - Frontend：React 19＋TypeScript＋Vite
 - Local index：SQLite（可刪除重建的 derived cache；`project.json` 仍是 source of truth）
-- Media：FFmpeg／FFprobe（argv-only、非破壞式 trim/export）
+- Media：FFmpeg／FFprobe（argv-only、typed multi-track filter graph、字幕燒錄、非破壞式 export）
 - Tests：Rust tests、Vitest、Playwright、PowerShell smoke tests
 
 ## 目錄
@@ -89,9 +89,13 @@ npm run desktop:dev
 - CLI：`create`、`list`、`validate`、`structure`、`archive`、`restore`、`migrate`、`index`、`task`、`asset`、`document`、`journal`。
 - Desktop：儀表板、專案卡片、新增專案視窗、專案工作區與編號化 Step/Next step 導引。
 - Desktop：folder picker 選擇 Library root，設定保存在本機 webview storage。
-- Desktop：影片工作台以 1–7 步驟完成素材選擇、timeline trim、FFprobe、FFmpeg、metadata dry-run 與 YouTube 確認上傳。
+- NLE：portable timeline schema v2、v1 backup migration、多軌影音、typed effects、transition、SRT/VTT→ASS 字幕燒錄。
+- Background jobs：單 worker export queue、queued/running/completed/failed/cancelled、進度與 in-flight FFmpeg 終止。
+- Desktop：影片工作台以 1–10 編號步驟完成素材／軌道、trim、effects、字幕樣式、FFprobe、背景匯出、metadata dry-run 與 YouTube 確認上傳。
 - CLI：`timeline`、`media probe/export`、`publish config/dry-run/upload --confirm`。
 - Release：Tauri v0.2.0 MSI／NSIS、`scripts/release-checks.ps1`、`scripts/installer-smoke.ps1`。
+
+詳細設計與限制請見 `planning/nle-v1-blueprint.md` 與 `docs/17-media-pipeline.md`。這裡的「professional effects」指已實作且可驗收的 typed 非破壞式效果，不代表 Adobe Premiere Pro 所有專有功能的逐項相容。
 
 ## 建議開發順序
 
