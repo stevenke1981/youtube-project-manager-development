@@ -88,4 +88,4 @@
 - [x] 編號化 editor flow、track/effect/subtitle controls、queue progress/cancel UI。
 - [x] Windows 中文／空白路徑、filter escaping、junction/reparse regression。
 - [x] 完整 Rust、frontend、reproducible UI/build、installer/release gate。
-- [ ] git commit、push 與遠端 SHA parity 驗證。
+- [x] git commit、push 與遠端 SHA parity 驗證。

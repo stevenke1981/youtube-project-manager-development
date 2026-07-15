@@ -52,6 +52,7 @@
 - [x] `scripts/release-checks.ps1 -Check All`、`scripts/installer-smoke.ps1 -InspectOnly`：MSI／NSIS 與 SHA-256 通過，未變更使用者安裝。
 - [x] Release executable launch smoke：程序維持運行且 window title 為 `YouTube Project Manager`；驗證後停止測試程序。
 - [x] MSI SHA-256 `870EEB3E0AEE493E6A2538B8E8649E98CBF7B25100BB18A974854722C5C9A0A8`；NSIS SHA-256 `4227BF806E27F0FFA6FDE98487D402D8D278328F1AAF0A3648FB07FE8E516FA1`。
+- [x] Feature commit `a0b6e39` 已 push 至 public GitHub `main`；最終文件 commit 後再次核對遠端 SHA parity。
 
 ## 下一個開發者第一步
 

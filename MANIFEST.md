@@ -1,6 +1,6 @@
 # Package Manifest
 
-Generated: 2026-07-15T03:30:31.5614762Z
+Generated: 2026-07-15T03:31:59.3080777Z
 
 | File | Bytes | SHA-256 |
 |---|---:|---|
@@ -100,13 +100,13 @@ Generated: 2026-07-15T03:30:31.5614762Z
 | `planning/acceptance-criteria.md` | 5000 | `b679b602f5ca4daee2d470c1bfb1ad1c5766a0e61c42f9b65c07cb64231519db` |
 | `planning/decision-log.md` | 821 | `7bd09bf20d48f1e6f0bf4ccb18017410cf6f68c3a3924c641854bd615e9a6c66` |
 | `planning/design.md` | 1904 | `27757b5681ad19292596ac87e328cc50a50f4754470eb6c9197d3dad22fccd10` |
-| `planning/final.md` | 6849 | `ac9e3c7a9c7125f0332fecfa75a5bacf01daff12d19521be86497cd0fdc70fe3` |
+| `planning/final.md` | 6972 | `fc87d004fb125293bee14cf245e7e193bdb8be6075ad7a02c677d3dfcafe86f8` |
 | `planning/nle-v1-blueprint.md` | 3056 | `b75c01f092ff15ff766c8668600f3a6dc8efa9bcb5f2cf6fac8f280aaf483207` |
 | `planning/plan.md` | 3222 | `975f1f8c8d841021aaf92113e646a39e591c1812ba43fb175fa6fa6f530e0331` |
 | `planning/risk-register.md` | 955 | `a6da26dd0d88011132e2077176be804b3f47ab8242f5edca469ab9d36ee7800d` |
 | `planning/spec.md` | 6178 | `5d3ff1663491e8013d554777004f26e64966be7ffc14d535bf00060fb2f16ea8` |
 | `planning/test.md` | 1834 | `40e8c8b1b3564518e855e31ce4496a80032a72476dd731978d76a22398471a9b` |
-| `planning/todos.md` | 4020 | `ce52bf19ec85b3a111866aea2710c9ca396d8a00190aadfd75ba0523059cefb7` |
+| `planning/todos.md` | 4020 | `c5603de1401d8bda8f1cf9b3599af46c722aa2bc9ef642263f18d5ca118fd36e` |
 | `planning/ui-design.md` | 2883 | `6be7bbb8df7d356d659b5f9bed02f05d983105b7bec6f88b3afe7e11f7f96aee` |
 | `planning/ui-verification.md` | 1906 | `77aa22f08a9c552cf87e2c9db5de63423773e6a26b3e3ace15e697bde9bd1b0c` |
 | `README.md` | 5331 | `6bef9a7b874149e3376ea811990a7be347112f8303c48495fc253918103593e5` |
